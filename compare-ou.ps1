@@ -10,9 +10,9 @@ $targetChildOUs = Get-ADOrganizationalUnit -SearchBase $targetOU -SearchScope On
 
 # Compare the source and target child OUs and output any missing OUs
 foreach ($childOU in $sourceChildOUs) {
-    $ouDN = $childOU.DistinguishedName
-    $ouExists = $targetChildOUs | Where-Object {$_.DistinguishedName -eq $ouDN}
+    $ouName = $childOU.Name
+    $ouExists = $targetChildOUs | Where-Object {$_.Name -eq $ouName}
     if (!$ouExists) {
-        Write-Output "OU '$ouDN' is missing from target OU structure."
+        Write-Output "OU '$ouName' is missing from target OU structure."
     }
 }
