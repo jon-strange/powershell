@@ -8,7 +8,8 @@ $gcpRegion = $inputString.Substring(0, 3)
 $prodEnv = $inputString.Substring(3, 2)
 
 # Construct the filter to find computers in the physical datacenter OUs with names matching the pattern
-$filter = "(Name -like '*${inputString.Substring(5)}*') -and (DistinguishedName -like '*,OU=Infrastructure Servers,DC=us,DC=saas' -or DistinguishedName -like '*,OU=Enterprise Servers,DC=us,DC=saas' -or DistinguishedName -like '*,OU=MidMarket Servers,DC=us,DC=saas' -or DistinguishedName -like '*,OU=Payment Services File Servers,DC=us,DC=saas')"
+$filter = "(Name -like '*$($inputString.Substring(5))*') -and (DistinguishedName -like '*OU=Infrastructure Servers,DC=us,DC=saas' -or DistinguishedName -like '*OU=Enterprise Servers,DC=us,DC=saas' -or DistinguishedName -like '*OU=MidMarket Servers,DC=us,DC=saas' -or DistinguishedName -like '*OU=Payment Services File Servers,DC=us,DC=saas')"
+
 
 # Search for matching computers in Active Directory
 $matchingComputers = Get-ADComputer -Filter $filter -Properties Name,DistinguishedName
