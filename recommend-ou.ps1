@@ -21,13 +21,15 @@ $midMarketServersCount = ($matchingComputers | Where-Object {$_.DistinguishedNam
 $paymentServicesCount = ($matchingComputers | Where-Object {$_.DistinguishedName -like '*,OU=Payment Services File Servers,DC=us,DC=saas'}).Count
 
 # Determine the physical datacenter OU with the most matching computers
-$maxCount = [Math]::Max($infraServersCount, $enterpriseServersCount, $midMarketServersCount, $paymentServicesCount)
-$mostLikelyOu = switch ($maxCount) {
-    $infraServersCount { "Infrastructure Servers" }
-    $enterpriseServersCount { "Enterprise Servers" }
-    $midMarketServersCount { "MidMarket Servers" }
-    $paymentServicesCount { "Payment Services File Servers" }
+$counts = @{
+    "Infrastructure Servers" = $infraServersCount
+    "Enterprise Servers" = $enterpriseServersCount
+    "MidMarket Servers" = $midMarketServersCount
+    "Payment Services File Servers" = $paymentServicesCount
 }
+$maxCount = ($counts.Values | Measure-Object -Maximum).Maximum
+$mostLikelyOu = ($counts.GetEnumerator() | Where-Object {$_.Value -eq $maxCount}).Name
+
 
 # Construct the OU path for the recommended location in the Public Cloud OU structure
 $ouPath = "OU=$mostLikelyOu,OU=$gcpRegion,OU=$mostLikelyOu,OU=GCP,DC=us,DC=saas"
