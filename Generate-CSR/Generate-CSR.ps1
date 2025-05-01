@@ -2,94 +2,125 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 function Get-EnterpriseCA {
-    $ca = & certutil -config - -ping 2>$null | Select-String '^  "(.*)"' | ForEach-Object {
-        ($_ -replace '^  "', '') -replace '"$', ''
-    } | Select-Object -First 1
-    return $ca
+    try {
+        & certutil -config - -ping 2>$null | ForEach-Object {
+            if ($_ -match '^  "(.*)"$') { return $matches[1] }
+        } | Select-Object -First 1
+    } catch { return $null }
 }
 
-function Generate-CSR {
+function New-CsrWithSan {
     param (
-        [string]$CN,
-        [string]$C,
-        [string]$ST,
-        [string]$L,
-        [string]$O,
-        [string]$OU,
-        [string]$Email,
-        [string[]]$SAN_DNS,
-        [string[]]$SAN_IP,
-        [string]$OutDir,
-        [string]$CAConfig,
-        [System.Windows.Forms.TextBox]$LogBox,
-        [switch]$Submit
+        [string]$CN, [string]$C, [string]$S, [string]$L,
+        [string]$O, [string]$OU, [string]$Email,
+        [string[]]$SAN_DNS, [string[]]$SAN_IP,
+        [string]$OutDir, [System.Windows.Forms.TextBox]$LogBox,
+        [bool]$Submit, [string]$CAConfig
     )
 
-    $Subject = "CN=$CN, C=$C, S=$ST, L=$L, O=$O, OU=$OU, E=$Email"
-    $SanList = @()
+    $baseName = $CN -replace '[^a-zA-Z0-9._-]', "_"
+    $keyPath = Join-Path $OutDir "$baseName.key"
+    $csrPath = Join-Path $OutDir "$baseName.req"
+    $infPath = Join-Path $OutDir "$baseName.inf"
+    $logPath = Join-Path $OutDir "request_log.txt"
 
+    $rsa = New-Object System.Security.Cryptography.RSACryptoServiceProvider(2048)
+    $keyBytes = $rsa.ExportCspBlob($true)
+    $pemKey = "-----BEGIN RSA PRIVATE KEY-----`n"
+    $pemKey += ([Convert]::ToBase64String($keyBytes) -split '(.{1,64})' | Where-Object { $_ }) -join "`n"
+    $pemKey += "`n-----END RSA PRIVATE KEY-----"
+    Set-Content -Path $keyPath -Value $pemKey -Encoding ascii
+    $LogBox.AppendText("🔐 Key saved: $baseName.key`n")
+
+    $subject = "CN=$CN, E=$Email, OU=$OU, O=$O, L=$L, S=$S, C=$C"
+
+    $sanItems = @()
     foreach ($dns in $SAN_DNS) {
-        if ($dns -and $dns.Trim()) { $SanList += "dns=$($dns.Trim())" }
+        if ($dns -and $dns.Trim()) {
+            $sanItems += "DNS=$($dns.Trim())"
+        }
     }
     foreach ($ip in $SAN_IP) {
-        if ($ip -and $ip.Trim()) { $SanList += "ipaddress=$($ip.Trim())" }
+        if ($ip -and $ip.Trim()) {
+            $sanItems += "IP=$($ip.Trim())"
+        }
+    }
+    $LogBox.AppendText("📎 SANs: " + ($sanItems -join ", ") + "`n")
+
+    $sanBlock = ""
+    if ($sanItems.Count -gt 0) {
+        $sanJoined = $sanItems -join "&"
+        $sanBlock = @"
+[Extensions]
+2.5.29.17 = "{text}"
+_continue_ = "$sanJoined"
+"@.Trim()
     }
 
-    $sanString = $SanList -join '&'
-    $infContent = @"
+    $infBase = @"
 [Version]
-Signature="\$Windows NT\$"
+Signature="$Windows NT$"
 
 [NewRequest]
-Subject = "$Subject"
-KeySpec = 1
+Subject = "$subject"
 KeyLength = 2048
 Exportable = TRUE
 MachineKeySet = TRUE
 SMIME = FALSE
 PrivateKeyArchive = FALSE
 UserProtected = FALSE
-UseExistingKeySet = FALSE
-ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
-ProviderType = 12
 RequestType = PKCS10
 KeyUsage = 0xa0
+ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
+"@
 
-[Extensions]
-2.5.29.17 = "{text}"
-_continue_ = "$sanString"
-
+    $infTail = @"
 [RequestAttributes]
 CertificateTemplate = WebServer
 "@
 
-    $baseName = $CN -replace '[^a-zA-Z0-9_-]', '_'
-    $infPath = Join-Path $OutDir "$baseName.inf"
-    $reqPath = Join-Path $OutDir "$baseName.req"
-    $logPath = Join-Path $OutDir "request_log.txt"
+    $infContent = $infBase
+    if ($sanBlock) { $infContent += "`n$sanBlock`n" }
+    $infContent += $infTail
+    $LogBox.AppendText("🧾 Final INF Content:`n$infContent`n`n")
+
+    Set-Content -Path $infPath -Value $infContent -Encoding ascii
+    $LogBox.AppendText("📝 INF created: $baseName.inf`n")
 
     try {
-        $infContent | Set-Content -Path $infPath -Encoding ASCII
-        certreq -new $infPath $reqPath | Out-Null
-        $LogBox.AppendText("✅ Created CSR: $baseName.req`n")
-
-        if ($Submit -and $CAConfig) {
-            $submitOut = certreq -submit -config "$CAConfig" $reqPath 2>&1
-            $LogBox.AppendText("🔼 Submitted CSR for ${baseName}:`n$submitOut`n")
-        }
-
-        "$CN : Success" | Out-File -Append $logPath
+        certreq -new $infPath $csrPath | Out-Null
+        Remove-Item $infPath -Force
+        $LogBox.AppendText("✅ CSR created: $baseName.req`n")
+        "$CN : CSR + KEY created" | Out-File -Append $logPath
     } catch {
-        $err = "❌ Error generating CSR for ${CN}: $_"
-        $LogBox.AppendText("$err`n")
-        "$CN : Failed - $_" | Out-File -Append $logPath
+        $LogBox.AppendText("❌ CSR creation failed for ${CN}: $_`n")
+        return
+    }
+
+    if ($Submit -and $CAConfig) {
+        try {
+            $output = certreq -submit -config "$CAConfig" -attrib "CertificateTemplate:WebServer" $csrPath 2>&1
+            $LogBox.AppendText("🔼 Submitted to CA: $CN`n$output`n")
+            $requestId = ($output | Select-String -Pattern "RequestId: (\d+)" | ForEach-Object {
+                ($_ -match "RequestId: (\d+)") | Out-Null
+                $matches[1]
+            })
+            if ($requestId) {
+                $LogBox.AppendText("📋 Request ID: $requestId (Pending)`n")
+                "$CN : Submitted to CA, Request ID $requestId" | Out-File -Append $logPath
+            } else {
+                "$CN : Submitted to CA (no Request ID detected)" | Out-File -Append $logPath
+            }
+        } catch {
+            $LogBox.AppendText("❌ Submission failed for ${CN}: $_`n")
+        }
     }
 }
 
-# GUI Setup
+# GUI Elements
 $form = New-Object System.Windows.Forms.Form
-$form.Text = "Batch SSL CSR Generator"
-$form.Size = New-Object System.Drawing.Size(600, 500)
+$form.Text = "PowerShell CSR Generator (.key + .req with SAN + Submit)"
+$form.Size = New-Object System.Drawing.Size(600, 520)
 $form.StartPosition = "CenterScreen"
 
 $csvLabel = New-Object System.Windows.Forms.Label
@@ -141,13 +172,13 @@ $form.Controls.Add($browseOut)
 
 $submitBox = New-Object System.Windows.Forms.CheckBox
 $submitBox.Text = "Submit CSRs to CA"
-$submitBox.Location = New-Object System.Drawing.Point(120, 100)
+$submitBox.Location = New-Object System.Drawing.Point(120, 95)
 $submitBox.Size = New-Object System.Drawing.Size(200, 20)
 $form.Controls.Add($submitBox)
 
 $generateBtn = New-Object System.Windows.Forms.Button
 $generateBtn.Text = "Generate"
-$generateBtn.Location = New-Object System.Drawing.Point(120, 140)
+$generateBtn.Location = New-Object System.Drawing.Point(120, 125)
 $generateBtn.Size = New-Object System.Drawing.Size(100, 30)
 $form.Controls.Add($generateBtn)
 
@@ -155,13 +186,15 @@ $LogBox = New-Object System.Windows.Forms.TextBox
 $LogBox.Multiline = $true
 $LogBox.ScrollBars = "Vertical"
 $LogBox.ReadOnly = $true
-$LogBox.Location = New-Object System.Drawing.Point(20, 190)
-$LogBox.Size = New-Object System.Drawing.Size(545, 250)
+$LogBox.Location = New-Object System.Drawing.Point(20, 170)
+$LogBox.Size = New-Object System.Drawing.Size(545, 300)
 $form.Controls.Add($LogBox)
 
+# Button Logic
 $generateBtn.Add_Click({
     $csvPath = $csvPathBox.Text
     $outPath = $outPathBox.Text
+    $submit = $submitBox.Checked
 
     if (-not (Test-Path $csvPath)) {
         [System.Windows.Forms.MessageBox]::Show("Invalid CSV path.","Error")
@@ -173,21 +206,27 @@ $generateBtn.Add_Click({
     }
 
     try {
-        $devices = Import-Csv -Path $csvPath
+        $rows = Import-Csv $csvPath
     } catch {
-        [System.Windows.Forms.MessageBox]::Show("CSV format error: $_","Error")
+        [System.Windows.Forms.MessageBox]::Show("Failed to read CSV: $_","Error")
         return
     }
 
-    $caConfig = if ($submitBox.Checked) { Get-EnterpriseCA } else { $null }
+    $caConfig = if ($submit) { Get-EnterpriseCA } else { $null }
 
-    foreach ($d in $devices) {
-        Generate-CSR -CN $d.CN -C $d.C -ST $d.S -L $d.L -O $d.O -OU $d.OU -Email $d.Email `
-            -SAN_DNS ($d.SAN_DNS -split ';') -SAN_IP ($d.SAN_IP -split ';') `
-            -OutDir $outPath -CAConfig $caConfig -LogBox $LogBox -Submit:$submitBox.Checked
+    foreach ($row in $rows) {
+        try {
+            $dnsList = $row.SAN_DNS -split ';'
+            $ipList  = $row.SAN_IP -split ';'
+            New-CsrWithSan -CN $row.CN -C $row.C -S $row.S -L $row.L -O $row.O -OU $row.OU -Email $row.Email `
+                -SAN_DNS $dnsList -SAN_IP $ipList -OutDir $outPath -LogBox $LogBox `
+                -Submit:$submit -CAConfig $caConfig
+        } catch {
+            $LogBox.AppendText("❌ Failed for $($row.CN): $_`n")
+        }
     }
 
-    [System.Windows.Forms.MessageBox]::Show("CSR generation complete.","Done")
+    [System.Windows.Forms.MessageBox]::Show("CSR generation completed.","Done")
 })
 
 [void]$form.ShowDialog()
