@@ -1,192 +1,192 @@
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-function New-CSRInf {
+function Get-EnterpriseCA {
+    $ca = & certutil -config - -ping 2>$null | Select-String '^  "(.*)"' | ForEach-Object {
+        ($_ -replace '^  "', '') -replace '"$', ''
+    } | Select-Object -First 1
+    return $ca
+}
+
+function Generate-CSR {
     param (
         [string]$CN,
         [string]$C,
-        [string]$S,
+        [string]$ST,
         [string]$L,
         [string]$O,
         [string]$OU,
         [string]$Email,
         [string[]]$SAN_DNS,
         [string[]]$SAN_IP,
-        [int]$KeyLength,
-        [string]$OutputPath
+        [string]$OutDir,
+        [string]$CAConfig,
+        [System.Windows.Forms.TextBox]$LogBox,
+        [switch]$Submit
     )
 
-    $sanEntries = @()
-    $sanIndex = 0
+    $Subject = "CN=$CN, C=$C, S=$ST, L=$L, O=$O, OU=$OU, E=$Email"
+    $SanList = @()
+
     foreach ($dns in $SAN_DNS) {
-        if ($dns.Trim()) {
-            $sanEntries += "DNS.$sanIndex=$dns"
-            $sanIndex++
-        }
+        if ($dns -and $dns.Trim()) { $SanList += "dns=$($dns.Trim())" }
     }
     foreach ($ip in $SAN_IP) {
-        if ($ip.Trim()) {
-            $sanEntries += "IP.$sanIndex=$ip"
-            $sanIndex++
-        }
+        if ($ip -and $ip.Trim()) { $SanList += "ipaddress=$($ip.Trim())" }
     }
 
+    $sanString = $SanList -join '&'
     $infContent = @"
 [Version]
 Signature="\$Windows NT\$"
 
 [NewRequest]
-Subject = "CN=$CN, C=$C, S=$S, L=$L, O=$O, OU=$OU, E=$Email"
-KeyLength = $KeyLength
+Subject = "$Subject"
 KeySpec = 1
-KeyUsage = 0xa0
+KeyLength = 2048
 Exportable = TRUE
 MachineKeySet = TRUE
 SMIME = FALSE
 PrivateKeyArchive = FALSE
 UserProtected = FALSE
+UseExistingKeySet = FALSE
 ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
+ProviderType = 12
 RequestType = PKCS10
+KeyUsage = 0xa0
 
 [Extensions]
 2.5.29.17 = "{text}"
-$($sanEntries -join "`n")
+_continue_ = "$sanString"
 
 [RequestAttributes]
 CertificateTemplate = WebServer
 "@
 
-    $infFile = Join-Path $OutputPath "$CN.inf"
-    Set-Content -Path $infFile -Value $infContent -Encoding ASCII
-    return $infFile
-}
+    $baseName = $CN -replace '[^a-zA-Z0-9_-]', '_'
+    $infPath = Join-Path $OutDir "$baseName.inf"
+    $reqPath = Join-Path $OutDir "$baseName.req"
+    $logPath = Join-Path $OutDir "request_log.txt"
 
-function Submit-CSR {
-    param (
-        [string]$InfFile,
-        [string]$OutputPath,
-        [bool]$SubmitCSR,
-        [System.Windows.Forms.TextBox]$LogBox
-    )
+    try {
+        $infContent | Set-Content -Path $infPath -Encoding ASCII
+        certreq -new $infPath $reqPath | Out-Null
+        $LogBox.AppendText("✅ Created CSR: $baseName.req`n")
 
-    $reqFile = [System.IO.Path]::ChangeExtension($InfFile, ".req")
-    $baseName = [System.IO.Path]::GetFileNameWithoutExtension($InfFile)
-
-    certreq -new $InfFile $reqFile | Out-Null
-    $LogBox.AppendText("Generated CSR for $baseName`n")
-
-    if ($SubmitCSR) {
-        $certutil = & certutil -config - -ping
-        if ($LASTEXITCODE -ne 0) {
-            $LogBox.AppendText("❌ Unable to detect CA. Skipping submission for $baseName`n")
-            return
+        if ($Submit -and $CAConfig) {
+            $submitOut = certreq -submit -config "$CAConfig" $reqPath 2>&1
+            $LogBox.AppendText("🔼 Submitted CSR for ${baseName}:`n$submitOut`n")
         }
 
-        $submitOut = certreq -submit -attrib "CertificateTemplate:WebServer" $reqFile 2>&1
-        $LogBox.AppendText("🔼 Submitted CSR for $baseName:`n$submitOut`n")
+        "$CN : Success" | Out-File -Append $logPath
+    } catch {
+        $err = "❌ Error generating CSR for ${CN}: $_"
+        $LogBox.AppendText("$err`n")
+        "$CN : Failed - $_" | Out-File -Append $logPath
     }
 }
 
 # GUI Setup
 $form = New-Object System.Windows.Forms.Form
 $form.Text = "Batch SSL CSR Generator"
-$form.Size = New-Object System.Drawing.Size(700,500)
+$form.Size = New-Object System.Drawing.Size(600, 500)
 $form.StartPosition = "CenterScreen"
 
 $csvLabel = New-Object System.Windows.Forms.Label
 $csvLabel.Text = "CSV File:"
-$csvLabel.Location = New-Object System.Drawing.Point(10,20)
-$csvLabel.Size = New-Object System.Drawing.Size(100,20)
+$csvLabel.Location = New-Object System.Drawing.Point(20, 20)
+$csvLabel.Size = New-Object System.Drawing.Size(100, 20)
 $form.Controls.Add($csvLabel)
 
 $csvPathBox = New-Object System.Windows.Forms.TextBox
-$csvPathBox.Location = New-Object System.Drawing.Point(80,18)
-$csvPathBox.Size = New-Object System.Drawing.Size(480,20)
+$csvPathBox.Location = New-Object System.Drawing.Point(120, 20)
+$csvPathBox.Size = New-Object System.Drawing.Size(360, 20)
 $form.Controls.Add($csvPathBox)
 
-$csvBrowse = New-Object System.Windows.Forms.Button
-$csvBrowse.Text = "Browse"
-$csvBrowse.Location = New-Object System.Drawing.Point(570,16)
-$csvBrowse.Size = New-Object System.Drawing.Size(75,23)
-$csvBrowse.Add_Click({
+$browseCSV = New-Object System.Windows.Forms.Button
+$browseCSV.Text = "Browse"
+$browseCSV.Location = New-Object System.Drawing.Point(490, 18)
+$browseCSV.Size = New-Object System.Drawing.Size(75, 23)
+$browseCSV.Add_Click({
     $fd = New-Object System.Windows.Forms.OpenFileDialog
-    $fd.Filter = "CSV Files|*.csv"
+    $fd.Filter = "CSV Files (*.csv)|*.csv"
     if ($fd.ShowDialog() -eq "OK") {
         $csvPathBox.Text = $fd.FileName
     }
 })
-$form.Controls.Add($csvBrowse)
+$form.Controls.Add($browseCSV)
 
 $outLabel = New-Object System.Windows.Forms.Label
 $outLabel.Text = "Output Folder:"
-$outLabel.Location = New-Object System.Drawing.Point(10,55)
-$outLabel.Size = New-Object System.Drawing.Size(100,20)
+$outLabel.Location = New-Object System.Drawing.Point(20, 60)
+$outLabel.Size = New-Object System.Drawing.Size(100, 20)
 $form.Controls.Add($outLabel)
 
 $outPathBox = New-Object System.Windows.Forms.TextBox
-$outPathBox.Location = New-Object System.Drawing.Point(100,53)
-$outPathBox.Size = New-Object System.Drawing.Size(460,20)
+$outPathBox.Location = New-Object System.Drawing.Point(120, 60)
+$outPathBox.Size = New-Object System.Drawing.Size(360, 20)
 $form.Controls.Add($outPathBox)
 
-$outBrowse = New-Object System.Windows.Forms.Button
-$outBrowse.Text = "Browse"
-$outBrowse.Location = New-Object System.Drawing.Point(570,51)
-$outBrowse.Size = New-Object System.Drawing.Size(75,23)
-$outBrowse.Add_Click({
+$browseOut = New-Object System.Windows.Forms.Button
+$browseOut.Text = "Browse"
+$browseOut.Location = New-Object System.Drawing.Point(490, 58)
+$browseOut.Size = New-Object System.Drawing.Size(75, 23)
+$browseOut.Add_Click({
     $fd = New-Object System.Windows.Forms.FolderBrowserDialog
     if ($fd.ShowDialog() -eq "OK") {
         $outPathBox.Text = $fd.SelectedPath
     }
 })
-$form.Controls.Add($outBrowse)
+$form.Controls.Add($browseOut)
 
 $submitBox = New-Object System.Windows.Forms.CheckBox
 $submitBox.Text = "Submit CSRs to CA"
-$submitBox.Location = New-Object System.Drawing.Point(10,85)
+$submitBox.Location = New-Object System.Drawing.Point(120, 100)
+$submitBox.Size = New-Object System.Drawing.Size(200, 20)
 $form.Controls.Add($submitBox)
 
-$runBtn = New-Object System.Windows.Forms.Button
-$runBtn.Text = "Generate"
-$runBtn.Location = New-Object System.Drawing.Point(10,115)
-$runBtn.Size = New-Object System.Drawing.Size(100,30)
-$form.Controls.Add($runBtn)
+$generateBtn = New-Object System.Windows.Forms.Button
+$generateBtn.Text = "Generate"
+$generateBtn.Location = New-Object System.Drawing.Point(120, 140)
+$generateBtn.Size = New-Object System.Drawing.Size(100, 30)
+$form.Controls.Add($generateBtn)
 
-$logBox = New-Object System.Windows.Forms.TextBox
-$logBox.Multiline = $true
-$logBox.ScrollBars = "Vertical"
-$logBox.ReadOnly = $true
-$logBox.Location = New-Object System.Drawing.Point(10,160)
-$logBox.Size = New-Object System.Drawing.Size(650,280)
-$form.Controls.Add($logBox)
+$LogBox = New-Object System.Windows.Forms.TextBox
+$LogBox.Multiline = $true
+$LogBox.ScrollBars = "Vertical"
+$LogBox.ReadOnly = $true
+$LogBox.Location = New-Object System.Drawing.Point(20, 190)
+$LogBox.Size = New-Object System.Drawing.Size(545, 250)
+$form.Controls.Add($LogBox)
 
-$runBtn.Add_Click({
-    $csvPath = $csvPathBox.Text.Trim()
-    $outPath = $outPathBox.Text.Trim()
-    $submit = $submitBox.Checked
+$generateBtn.Add_Click({
+    $csvPath = $csvPathBox.Text
+    $outPath = $outPathBox.Text
 
     if (-not (Test-Path $csvPath)) {
-        [System.Windows.Forms.MessageBox]::Show("CSV path is invalid.","Error")
+        [System.Windows.Forms.MessageBox]::Show("Invalid CSV path.","Error")
         return
     }
     if (-not (Test-Path $outPath)) {
-        [System.Windows.Forms.MessageBox]::Show("Output folder is invalid.","Error")
+        [System.Windows.Forms.MessageBox]::Show("Invalid output path.","Error")
         return
     }
 
-    $logPath = Join-Path $outPath "request_log.txt"
-    $devices = Import-Csv $csvPath
-    foreach ($device in $devices) {
-        $san_dns = $device.SAN_DNS -split ',' | ForEach-Object { $_.Trim() }
-        $san_ip = $device.SAN_IP -split ',' | ForEach-Object { $_.Trim() }
-
-        $infPath = New-CSRInf -CN $device.CN -C $device.C -S $device.S -L $device.L `
-            -O $device.O -OU $device.OU -Email $device.Email -SAN_DNS $san_dns -SAN_IP $san_ip `
-            -KeyLength ([int]$device.KeyLength) -OutputPath $outPath
-
-        Submit-CSR -InfFile $infPath -OutputPath $outPath -SubmitCSR:$submit -LogBox $logBox
+    try {
+        $devices = Import-Csv -Path $csvPath
+    } catch {
+        [System.Windows.Forms.MessageBox]::Show("CSV format error: $_","Error")
+        return
     }
 
-    $logBox.Text | Out-File -FilePath $logPath -Encoding UTF8
+    $caConfig = if ($submitBox.Checked) { Get-EnterpriseCA } else { $null }
+
+    foreach ($d in $devices) {
+        Generate-CSR -CN $d.CN -C $d.C -ST $d.S -L $d.L -O $d.O -OU $d.OU -Email $d.Email `
+            -SAN_DNS ($d.SAN_DNS -split ';') -SAN_IP ($d.SAN_IP -split ';') `
+            -OutDir $outPath -CAConfig $caConfig -LogBox $LogBox -Submit:$submitBox.Checked
+    }
+
     [System.Windows.Forms.MessageBox]::Show("CSR generation complete.","Done")
 })
 
