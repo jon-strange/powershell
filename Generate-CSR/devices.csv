@@ -1,3 +1,6 @@
-CN,C,S,L,O,OU,Email,SAN_DNS,SAN_IP,KeyLength
-webserver01.contoso.com,US,Washington,Seattle,Contoso IT,Web Services,admin@contoso.com,webserver01.contoso.com,www.contoso.com,192.168.1.10,2048
-webserver02.contoso.com,US,Washington,Seattle,Contoso IT,Web Services,admin@contoso.com,webserver02.contoso.com,www2.contoso.com,192.168.1.11,2048
+CN,C,S,L,O,OU,Email,SAN_DNS,SAN_IP
+web01.example.com,US,NY,New York,ExampleCorp,IT,admin1@example.com,web01.example.com;www.example.com,192.168.1.10;10.0.0.10
+web02.example.com,US,CA,San Francisco,ExampleCorp,WebTeam,admin2@example.com,web02.example.com;www2.example.com,192.168.1.11
+api01.example.net,US,TX,Dallas,ExampleNet,API,apiadmin@example.net,api01.example.net;api.example.net,10.1.1.1;172.16.0.1
+db01.internal.local,US,IL,Chicago,InternalTech,DB,dbadmin@internal.local,db01.internal.local;,10.2.2.2
+proxy01.dmz.local,US,FL,Miami,EdgeTech,Proxy,proxyadmin@dmz.local,proxy01.dmz.local;proxy.dmz.local,192.0.2.1;198.51.100.1
