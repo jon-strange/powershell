@@ -1,0 +1,3 @@
+CN,C,S,L,O,OU,Email,SAN_DNS,SAN_IP,KeyLength
+webserver01.contoso.com,US,Washington,Seattle,Contoso IT,Web Services,admin@contoso.com,webserver01.contoso.com,www.contoso.com,192.168.1.10,2048
+webserver02.contoso.com,US,Washington,Seattle,Contoso IT,Web Services,admin@contoso.com,webserver02.contoso.com,www2.contoso.com,192.168.1.11,2048
