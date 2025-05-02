@@ -34,32 +34,28 @@ function New-CsrWithSan {
 
     $subject = "CN=$CN, E=$Email, OU=$OU, O=$O, L=$L, S=$S, C=$C"
 
-    $sanItems = @()
+    # Build SAN extensions using correct _continue_ syntax
+    $sanLines = @()
     foreach ($dns in $SAN_DNS) {
         if ($dns -and $dns.Trim()) {
-            $sanItems += "DNS=$($dns.Trim())"
+            $sanLines += '_continue_ = "DNS=' + $dns.Trim() + '"'
         }
     }
     foreach ($ip in $SAN_IP) {
         if ($ip -and $ip.Trim()) {
-            $sanItems += "IP=$($ip.Trim())"
+            $sanLines += '_continue_ = "IP Address=' + $ip.Trim() + '"'
         }
     }
-    $LogBox.AppendText("📎 SANs: " + ($sanItems -join ", ") + "`n")
 
     $sanBlock = ""
-    if ($sanItems.Count -gt 0) {
-        $sanJoined = $sanItems -join "&"
-        $sanBlock = @"
-[Extensions]
-2.5.29.17 = "{text}"
-_continue_ = "$sanJoined"
-"@.Trim()
+    if ($sanLines.Count -gt 0) {
+        $sanBlock = "[Extensions]`n2.5.29.17 = `"{text}`"`n" + ($sanLines -join "`n")
     }
 
-    $infBase = @"
+    # Build INF content
+    $infContent = @"
 [Version]
-Signature="$Windows NT$"
+Signature="\$Windows NT\$"
 
 [NewRequest]
 Subject = "$subject"
@@ -74,15 +70,12 @@ KeyUsage = 0xa0
 ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
 "@
 
-    $infTail = @"
+    if ($sanBlock) { $infContent += "`n$sanBlock`n" }
+
+    $infContent += @"
 [RequestAttributes]
 CertificateTemplate = WebServer
 "@
-
-    $infContent = $infBase
-    if ($sanBlock) { $infContent += "`n$sanBlock`n" }
-    $infContent += $infTail
-    $LogBox.AppendText("🧾 Final INF Content:`n$infContent`n`n")
 
     Set-Content -Path $infPath -Value $infContent -Encoding ascii
     $LogBox.AppendText("📝 INF created: $baseName.inf`n")
@@ -93,7 +86,7 @@ CertificateTemplate = WebServer
         $LogBox.AppendText("✅ CSR created: $baseName.req`n")
         "$CN : CSR + KEY created" | Out-File -Append $logPath
     } catch {
-        $LogBox.AppendText("❌ CSR creation failed for ${CN}: $_`n")
+        $LogBox.AppendText("❌ CSR generation failed for ${CN}: $_`n")
         return
     }
 
@@ -116,6 +109,7 @@ CertificateTemplate = WebServer
         }
     }
 }
+
 
 # GUI Elements
 $form = New-Object System.Windows.Forms.Form
