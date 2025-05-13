@@ -92,9 +92,10 @@ ProviderName = "Microsoft RSA SChannel Cryptographic Provider"
         $infContent += "`n$sanBlock`n"
     }
 
+# Replace <cert_template_name> with the name of the Certificated Template being requested
     $infContent += @"
 [RequestAttributes]
-CertificateTemplate = HomenetWebServer
+CertificateTemplate = <cert_template_name>
 "@
 
     Set-Content -Path $infPath -Value $infContent -Encoding ascii
@@ -106,7 +107,8 @@ CertificateTemplate = HomenetWebServer
 
     # Submit CSR
     try {
-        $output = certreq -submit -config "$caConfig" -attrib "CertificateTemplate:HomenetWebServer" $reqPath 2>&1
+        # Replace <cert_template_name> with the name of the Certificated Template being requested
+        $output = certreq -submit -config "$caConfig" -attrib "CertificateTemplate:<cert_temmplate_name>" $reqPath 2>&1
         Write-Host "Submitted CSR for $CN"
 
         # Try to extract Request ID
