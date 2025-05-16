@@ -52,7 +52,7 @@ foreach ($Host in $Hosts) {
     # Convert password to plain for use with ssh
     $PlainPassword = $Credential.GetNetworkCredential().Password
 
-    # Upload using scp (assuming OpenSSH is enabled)
+    # Upload using scp (assuming SSH is enabled)
     Start-Process -NoNewWindow -Wait -FilePath "scp" -ArgumentList "`"$CertFile`" $Username@$Host:/tmp/rui.crt"
     Start-Process -NoNewWindow -Wait -FilePath "scp" -ArgumentList "`"$KeyFile`"  $Username@$Host:/tmp/rui.key"
 
