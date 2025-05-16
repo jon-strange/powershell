@@ -1,7 +1,11 @@
 ######################################################################################
 # ReplaceESXi-Certs
-# This script replaced the defaul VMCA signed SSL certificates on ESXi hosts with
-# externally signed SSL Certificates. 
+# This script replaces the default VMCA signed SSL certificates on ESXi hosts with
+# externally signed SSL Certificates.
+#
+# This script assumes that a properly signed SSL certificate and private key file 
+# exist for each host defined in the host list file. All cert and key pairs should
+# be placed in a single folder for this script to work
 #
 # 1. Create a text file with the FQDN of each 
 #    host, 1 per line. 
@@ -10,6 +14,7 @@
 # 3. Before running this script, ensure the vCenter server has the root CA installed
 #    in the trusted store and it is pushed to all hosts (refer to VMWare documentation
 #    for steps on how to do this)
+# 4. Ensure that all hosts have the SSH service running before executing this script
 #######################################################################################
 
 
