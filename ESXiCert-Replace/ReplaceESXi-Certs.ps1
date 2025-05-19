@@ -19,46 +19,38 @@
 
 
 # === USER SETTINGS ===
-$HostListFile = "C:\Path\To\hosts.txt"
-$CertFolder = "C:\Path\To\Certs"
+$HostListFile = "C:\Path\To\hosts.txt"     # Text file with FQDNs of ESXi hosts
+$CertFolder = "C:\Path\To\Certs"           # Folder containing .crt and .key files
 $Username = "root"
 
 # === Get Credentials Securely ===
 $Credential = Get-Credential -Message "Enter password for ESXi root access"
+$PlainPassword = $Credential.GetNetworkCredential().Password
 
-# === Process Each Host ===
-$Hosts = Get-Content $HostListFile
+# === Read Hosts File ===
+$Hosts = Get-Content -Path $HostListFile
 
 foreach ($Host in $Hosts) {
-    Write-Host "Processing $Host..."
+    Write-Host "`nProcessing $Host..."
 
     $CertFile = Join-Path $CertFolder "$Host.crt"
     $KeyFile  = Join-Path $CertFolder "$Host.key"
 
     # === Validate File Existence ===
     if (-not (Test-Path $CertFile)) {
-        Write-Warning "Certificate file not found for $Host"
+        Write-Warning "Certificate file not found: $CertFile"
         continue
     }
     if (-not (Test-Path $KeyFile)) {
-        Write-Warning "Key file not found for $Host"
+        Write-Warning "Key file not found: $KeyFile"
         continue
     }
 
-    # === Copy cert/key to ESXi host ===
-    $scpCertCmd = "scp `"$CertFile`" $Username@$Host:/tmp/rui.crt"
-    $scpKeyCmd  = "scp `"$KeyFile`" $Username@$Host:/tmp/rui.key"
+    # === Upload cert and key to /tmp on ESXi host ===
+    & scp $CertFile "$Username@$Host:/tmp/rui.crt"
+    & scp $KeyFile  "$Username@$Host:/tmp/rui.key"
 
-    # Convert password to plain for use with ssh
-    $PlainPassword = $Credential.GetNetworkCredential().Password
-
-    # Upload using scp (assuming SSH is enabled)
-    Start-Process -NoNewWindow -Wait -FilePath "scp" -ArgumentList "`"$CertFile`" $Username@$Host:/tmp/rui.crt"
-    Start-Process -NoNewWindow -Wait -FilePath "scp" -ArgumentList "`"$KeyFile`"  $Username@$Host:/tmp/rui.key"
-
-    # === Rename/backup via SSH ===
-    $ssh = "ssh $Username@$Host"
-
+    # === Prepare commands to execute over SSH ===
     $commands = @(
         "cp /etc/vmware/ssl/rui.crt /etc/vmware/ssl/rui.crt.bak",
         "cp /etc/vmware/ssl/rui.key /etc/vmware/ssl/rui.key.bak",
@@ -69,8 +61,8 @@ foreach ($Host in $Hosts) {
     )
 
     foreach ($cmd in $commands) {
-        ssh $Username@$Host $cmd
+        & ssh "$Username@$Host" "$cmd"
     }
 
-    Write-Host "Certificate replaced and services restarted on $Host`n"
+    Write-Host "Certificate replaced and services restarted on $Host"
 }
