@@ -4,7 +4,7 @@ $VMs = @("VM01", "VM02", "VM03")
 
 $Results = foreach ($VM in $VMs) {
     
-    # --- AD Query (separate try/catch so its failure is isolated) ---
+    # --- AD Query ---
     $LastLogonDate = $null
     try {
         $Computer = Get-ADComputer -Identity $VM -Properties LastLogonDate -ErrorAction Stop
@@ -14,7 +14,7 @@ $Results = foreach ($VM in $VMs) {
         Write-Warning "[$VM] Failed to query AD: $($_.Exception.Message)"
     }
 
-    # --- Event Log Query (separate try/catch so AD result is preserved) ---
+    # --- Event Log Query ---
     $Event = $null
     try {
         if ($LastLogonDate) {
@@ -35,7 +35,7 @@ $Results = foreach ($VM in $VMs) {
         Write-Warning "[$VM] Failed to query Event Log: $($_.Exception.Message)"
     }
 
-    # --- Build result regardless of which queries succeeded ---
+    # --- Build Result ---
     [PSCustomObject]@{
         VM             = $VM
         LastLogonDate  = if ($LastLogonDate) { $LastLogonDate } else { "AD query failed" }
@@ -47,11 +47,9 @@ $Results = foreach ($VM in $VMs) {
                                 10 { "RemoteInteractive (RDP)" }
                             }
                          } else { "N/A" }
-        Status         = switch {
-                            (-not $LastLogonDate)  { "AD query failed" }
-                            (-not $Event)          { "No interactive event found" }
-                            default                { "OK" }
-                         }
+        Status         = if (-not $LastLogonDate)  { "AD query failed" }
+                         elseif (-not $Event)       { "No interactive event found" }
+                         else                       { "OK" }
     }
 }
 
