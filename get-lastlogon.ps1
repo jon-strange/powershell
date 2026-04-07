@@ -1,6 +1,7 @@
 Import-Module ActiveDirectory
 
 $VMs = @("VM01", "VM02", "VM03")
+$ADDomain = (Get-ADDomain).NetBIOSName  # Dynamically pulls your AD domain name
 
 $Results = foreach ($VM in $VMs) {
 
@@ -14,7 +15,7 @@ $Results = foreach ($VM in $VMs) {
         Write-Warning "[$VM] Failed to query AD: $($_.Exception.Message)"
     }
 
-    # --- Event Log Query: just find the most recent interactive logon ---
+    # --- Event Log Query ---
     $Event = $null
     try {
         $Event = Get-WinEvent -ComputerName $VM -FilterHashtable @{
@@ -22,9 +23,10 @@ $Results = foreach ($VM in $VMs) {
             Id      = 4624
         } -ErrorAction Stop |
         Where-Object {
-            $_.Properties[5].Value -notmatch '^\$'
+            $_.Properties[5].Value -notmatch '^\$'             # Exclude machine accounts
             $_.Properties[5].Value -notin @('SYSTEM', 'LOCAL SERVICE', 'NETWORK SERVICE', 'ANONYMOUS LOGON')
-            $_.Properties[8].Value -in @(2, 10)   # Type 2=Interactive, Type 10=RDP
+            $_.Properties[6].Value -eq $ADDomain               # Must match your AD domain
+            $_.Properties[8].Value -in @(2, 10)                # Interactive & RDP only
         } | Select-Object -First 1
     }
     catch {
