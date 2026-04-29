@@ -18,20 +18,26 @@ $authBody = @{ domain = $domain; username = $username; password = $password } | 
 $token    = (Invoke-RestMethod -Uri $loginUri -Method POST -ContentType "application/json" -Body $authBody).access_token
 $headers  = @{ Authorization = "Bearer " + $token }
 
-# Pull a larger sample sorted newest-first
-$uri    = "https://" + $server + "/rest/external/v1/audit-events?page=1&size=100&sort_by=time&sort_order=Descending"
+# Pull a large batch sorted newest-first and show ALL unique event types
+# along with what machine names they are associated with (masked)
+$uri    = "https://" + $server + "/rest/external/v1/audit-events?page=1&size=1000&sort_by=time&sort_order=Descending"
 $result = Invoke-RestMethod -Uri $uri -Method GET -Headers $headers
 
-# 1. Show VLSI_USERLOGGEDIN events only — mask user_id, show machine and time
-Write-Host "=== VLSI_USERLOGGEDIN events in last 100 records ===" -ForegroundColor Cyan
-$result | Where-Object { $_.type -eq "VLSI_USERLOGGEDIN" } | ForEach-Object {
-    [PSCustomObject]@{
-        time             = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$_.time).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
-        machine_dns_name = $_.machine_dns_name
-        user_id_prefix   = ($_.user_id -as [string]).Substring(0,10) + "..."
-    }
-} | Format-Table -AutoSize
+Write-Host "=== All unique event types in last 1000 records ===" -ForegroundColor Cyan
+$result | Select-Object -ExpandProperty type | Sort-Object -Unique
 
-# 2. Show all unique machine_dns_name formats seen across all 100 events
-Write-Host "=== Unique machine_dns_name formats seen ===" -ForegroundColor Cyan
-$result | Select-Object -ExpandProperty machine_dns_name | Sort-Object -Unique
+Write-Host "`n=== Newest and oldest event timestamps in this batch ===" -ForegroundColor Cyan
+$sorted = $result | Sort-Object time -Descending
+$newest = [DateTimeOffset]::FromUnixTimeMilliseconds([long]($sorted | Select-Object -First 1).time).LocalDateTime
+$oldest = [DateTimeOffset]::FromUnixTimeMilliseconds([long]($sorted | Select-Object -Last 1).time).LocalDateTime
+Write-Host "Newest: $newest"
+Write-Host "Oldest: $oldest"
+
+# Pick one of your known VDI machine FQDNs that had a login 2 weeks ago
+$knownMachine = "yourvdimachine.domain.fqdn"
+
+Write-Host "`n=== All event types for $knownMachine ===" -ForegroundColor Cyan
+$result | Where-Object { $_.machine_dns_name -eq $knownMachine } |
+    Select-Object @{N="time";E={[DateTimeOffset]::FromUnixTimeMilliseconds([long]$_.time).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")}}, type |
+    Sort-Object time -Descending |
+    Format-Table -AutoSize
