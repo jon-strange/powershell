@@ -1,0 +1,13 @@
+
+    [404] /rest/swagger.json
+    [401] /rest/api-docs
+    [401] /rest/v1/swagger.json
+    [401] /rest/v2/swagger.json
+    [401] /rest/monitor/v1/events
+    [401] /rest/monitor/v2/events
+    [401] /rest/external/v1/audit-events
+    [401] /rest/inventory/v1/machines
+    [401] /rest/inventory/v2/machines
+    [404] /portal/rest/swagger.json
+    [404] /admin/rest/swagger.json
+    [404] /broker/rest/swagger.json
