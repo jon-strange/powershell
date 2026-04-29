@@ -97,7 +97,7 @@ Write-Host "  Authenticated successfully." -ForegroundColor Gray
 
 # ── Token refresh helper ─────────────────────────────────────
 function Update-HorizonToken {
-    $body = @{ refresh_token = $script:refreshToken } | ConvertTo-Json
+    $body       = @{ refresh_token = $script:refreshToken } | ConvertTo-Json
     $refreshUri = $script:baseUrl + "/refresh"
     $resp = Invoke-RestMethod -Uri $refreshUri -Method POST -ContentType "application/json" -Headers $script:authHeaders -Body $body
     $script:accessToken  = $resp.access_token
@@ -122,29 +122,26 @@ function Invoke-HorizonGet {
 # ── 3. Resolve AD SIDs and query audit events ────────────────
 Write-Host "[3/4] Resolving AD users and querying audit events..." -ForegroundColor Cyan
 
-# Horizon audit events API returns timestamps as epoch milliseconds
-# Search window start time in epoch milliseconds
+# Lookback window start in epoch milliseconds
 $script:fromTimeMs = [long]((Get-Date).AddDays(-$LookbackDays) - [datetime]"1970-01-01T00:00:00Z").TotalMilliseconds
 
 function Get-LastLoginEvent {
     param (
-        [string]$MachineDns,
+        [string]$MachineName,  # Short hostname — Horizon Events DB does not store FQDN
         [string]$UserSid
     )
 
-    $pageSize  = 100
-    $page      = 1
-    $lastLogin = $null
+    $pageSize   = 100
+    $page       = 1
+    $allMatches = @()
 
     do {
-        # Server-side filter: only BROKER_USERLOGGEDIN events for this specific machine.
-        # Results come back newest-first. We then match the SID client-side since the
-        # API does not support filtering on user_id directly.
+        # Server-side filter on short machine name and event type.
+        # sort_order is not reliably honoured by this API version so we
+        # collect all matching events across all pages and return the max.
         $uri = $script:baseUrl + "/external/v1/audit-events" +
                "?type=BROKER_USERLOGGEDIN" +
-               "&machine_dns_name=" + [System.Uri]::EscapeDataString($MachineDns) +
-               "&sort_by=time" +
-               "&sort_order=Descending" +
+               "&machine_dns_name=" + [System.Uri]::EscapeDataString($MachineName) +
                "&page=" + $page +
                "&size=" + $pageSize
 
@@ -153,22 +150,17 @@ function Get-LastLoginEvent {
 
             if ($events -and $events.Count -gt 0) {
 
-                # Match SID client-side and check within lookback window
-                $match = $events | Where-Object {
+                # Filter client-side by SID and lookback window
+                $pageMatches = $events | Where-Object {
                     $_.user_id -eq $UserSid -and
                     $_.time    -ge $script:fromTimeMs
-                } | Sort-Object time -Descending | Select-Object -First 1
-
-                if ($match) {
-                    $lastLogin = $match.time
-                    break
                 }
 
-                # If oldest event on this page is beyond the lookback window, stop
-                $oldestOnPage = ($events | Sort-Object time | Select-Object -First 1).time
-                if ($oldestOnPage -lt $script:fromTimeMs) { break }
+                if ($pageMatches) {
+                    $allMatches += $pageMatches
+                }
 
-                # If this page returned fewer results than requested, we've hit the end
+                # Stop when we get a partial page — no more results exist
                 if ($events.Count -lt $pageSize) { break }
 
             } else {
@@ -178,13 +170,18 @@ function Get-LastLoginEvent {
             $page++
 
         } catch {
-            Write-Warning "  Event query failed for $MachineDns : $_"
+            Write-Warning "  Event query failed for $MachineName : $_"
             break
         }
 
     } while ($true)
 
-    return $lastLogin
+    # Return the highest (most recent) timestamp across all matching events
+    if ($allMatches.Count -gt 0) {
+        return ($allMatches | Measure-Object -Property time -Maximum).Maximum
+    }
+
+    return $null
 }
 
 # ── 4. Build results ─────────────────────────────────────────
@@ -193,6 +190,9 @@ Write-Host "[4/4] Building report..." -ForegroundColor Cyan
 $results = foreach ($row in $vdiList) {
     $fqdn    = ($row."DNS Name"      -as [string]).Trim()
     $rawUser = ($row."Assigned User" -as [string]).Trim()
+
+    # Strip domain suffix — Horizon Events DB stores short hostname only
+    $machineName = $fqdn.Split('.')[0]
 
     # Parse domain.fqdn\username
     $samAccount = $rawUser
@@ -214,7 +214,7 @@ $results = foreach ($row in $vdiList) {
         }
         if ($userDomain) { $adParams["Server"] = $userDomain }
         $adUser  = Get-ADUser @adParams
-        $userSid = $adUser.SID.Value   # e.g. S-1-5-21-...
+        $userSid = $adUser.SID.Value
     } catch {
         Write-Warning "  AD lookup failed for '$samAccount': $_"
     }
@@ -222,9 +222,9 @@ $results = foreach ($row in $vdiList) {
     $lastLoginDisplay = "AD lookup failed - skipping"
 
     if ($userSid) {
-        Write-Host "  Querying events for $samAccount ($userSid) on $fqdn ..." -ForegroundColor Gray
+        Write-Host "  Querying events for $samAccount on $machineName ..." -ForegroundColor Gray
 
-        $lastLoginMs = Get-LastLoginEvent -MachineDns $fqdn -UserSid $userSid
+        $lastLoginMs = Get-LastLoginEvent -MachineName $machineName -UserSid $userSid
 
         $lastLoginDisplay = if ($lastLoginMs) {
             ([DateTimeOffset]::FromUnixTimeMilliseconds([long]$lastLoginMs)).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
@@ -235,6 +235,7 @@ $results = foreach ($row in $vdiList) {
 
     [PSCustomObject]@{
         MachineFQDN    = $fqdn
+        MachineName    = $machineName
         AssignedUser   = $rawUser
         SamAccountName = $samAccount
         Domain         = $userDomain
