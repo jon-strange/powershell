@@ -18,32 +18,16 @@ $authBody = @{ domain = $domain; username = $username; password = $password } | 
 $token    = (Invoke-RestMethod -Uri $loginUri -Method POST -ContentType "application/json" -Body $authBody).access_token
 $headers  = @{ Authorization = "Bearer " + $token }
 
-$pathsToTry = @(
-    "/rest/monitor/v1/events",
-    "/rest/monitor/v2/events",
-    "/rest/external/v1/audit-events",
-    "/rest/monitor/v1/session-events",
-    "/rest/monitor/v2/session-events",
-    "/rest/monitor/v1/desktop-sessions",
-    "/rest/monitor/v2/desktop-sessions",
-    "/rest/monitor/v1/audit",
-    "/rest/monitor/v2/audit",
-    "/rest/inventory/v1/sessions",
-    "/rest/inventory/v2/sessions",
-    "/rest/inventory/v1/machines",
-    "/rest/inventory/v2/machines",
-    "/rest/monitor/v1/global-sessions",
-    "/rest/monitor/v2/global-sessions"
-)
+$uri    = "https://" + $server + "/rest/external/v1/audit-events?page=1&size=3"
+$result = Invoke-RestMethod -Uri $uri -Method GET -Headers $headers
 
-foreach ($path in $pathsToTry) {
-    $uri = "https://" + $server + $path + "?page=1&size=1"
-    try {
-        $resp = Invoke-RestMethod -Uri $uri -Method GET -Headers $headers -ErrorAction Stop
-        Write-Host "OK  [200] $path" -ForegroundColor Green
-        Write-Host "    Response: $($resp | ConvertTo-Json -Depth 2 -Compress)" -ForegroundColor Yellow
-    } catch {
-        $code = $_.Exception.Response.StatusCode.value__
-        Write-Host "    [$code] $path" -ForegroundColor Gray
-    }
+# Print only the field names from the first record — no values
+if ($result -and $result.Count -gt 0) {
+    Write-Host "Top-level response type: $($result.GetType().Name)"
+    Write-Host "First record field names:"
+    $result[0].PSObject.Properties.Name
+} elseif ($result.PSObject.Properties["data"]) {
+    Write-Host "Top-level response type: object with 'data' property"
+    Write-Host "First record field names:"
+    $result.data[0].PSObject.Properties.Name
 }
