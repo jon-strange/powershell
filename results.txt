@@ -11,3 +11,10 @@
     [404] /portal/rest/swagger.json
     [404] /admin/rest/swagger.json
     [404] /broker/rest/swagger.json
+
+Invoke-RestMethod : The remote server returned an error: (404) Not Found.
+At line:23 char:15
++ ... wagger    = Invoke-RestMethod -Uri $swaggerUri -Method GET -Headers $ ...
++                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-RestMethod], WebException
+    + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeRestMethodCommand
