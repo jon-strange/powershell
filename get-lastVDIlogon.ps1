@@ -1,10 +1,10 @@
 # ============================================================
 # Get-VDILastLogin.ps1
 #
-# Reads a CSV of VDI machines and assigned users, then queries
-# the VMware Horizon REST API event history (backed by the
-# Events DB) to find the last time each user logged into their
-# assigned VDI machine.
+# Reads a CSV of VDI machines and assigned users, resolves each
+# user's AD SID, then queries the Horizon audit events API
+# (/rest/external/v1/audit-events) to find the last VLSI_USERLOGGEDIN
+# event matching that SID on their assigned VDI machine.
 #
 # CSV format expected:
 #   DNS Name,Assigned User
@@ -14,37 +14,32 @@
 # Requirements:
 #   - HTTPS access to the Horizon Connection Server
 #   - Horizon account with "Administrators (Read only)" role or higher
-#   - Horizon 7.10+ (REST API with event history support)
+#   - ActiveDirectory PowerShell module (RSAT)
 #   - PowerShell 5.1+
 # ============================================================
 
+#Requires -Modules ActiveDirectory
+
 [CmdletBinding()]
 param (
-    # Path to your input CSV
     [Parameter(Mandatory)]
     [string]$CsvPath,
 
-    # Horizon Connection Server FQDN or IP (do NOT include https://)
     [Parameter(Mandatory)]
     [string]$HorizonServer,
 
-    # Horizon credentials (will prompt if not supplied)
     [System.Management.Automation.PSCredential]$HorizonCredential = (Get-Credential -Message "Enter Horizon read-only credentials"),
 
-    # Horizon domain (the short/NetBIOS domain used to log into Horizon console)
     [Parameter(Mandatory)]
     [string]$HorizonDomain,
 
     # How far back to search for login events (days). Default 365.
     [int]$LookbackDays = 365,
 
-    # Output CSV path. Leave blank to display on screen only.
     [string]$OutputCsv = ""
 )
 
-$baseUrl = "https://$HorizonServer/rest"
-
-# Ignore self-signed cert errors common on internal Horizon servers
+# ── TLS / cert bypass ────────────────────────────────────────
 if (-not ([System.Management.Automation.PSTypeName]'TrustAllCerts').Type) {
     Add-Type @"
         using System.Net;
@@ -80,6 +75,7 @@ Write-Host "  Found $($vdiList.Count) row(s)." -ForegroundColor Gray
 # ── 2. Authenticate to Horizon REST API ──────────────────────
 Write-Host "[2/4] Authenticating to Horizon REST API..." -ForegroundColor Cyan
 
+$loginUri = "https://" + $HorizonServer + "/rest/login"
 $authBody = @{
     domain   = $HorizonDomain
     username = $HorizonCredential.UserName
@@ -87,45 +83,29 @@ $authBody = @{
 } | ConvertTo-Json
 
 try {
-    $authResponse = Invoke-RestMethod `
-        -Uri "$baseUrl/login" `
-        -Method POST `
-        -ContentType "application/json" `
-        -Body $authBody `
-        -ErrorAction Stop
-
-    $accessToken  = $authResponse.access_token
-    $refreshToken = $authResponse.refresh_token
+    $authResponse        = Invoke-RestMethod -Uri $loginUri -Method POST -ContentType "application/json" -Body $authBody -ErrorAction Stop
+    $script:accessToken  = $authResponse.access_token
+    $script:refreshToken = $authResponse.refresh_token
+    $script:authHeaders  = @{ Authorization = "Bearer " + $script:accessToken }
+    $script:baseUrl      = "https://" + $HorizonServer + "/rest"
 } catch {
     Write-Error "Authentication failed: $_"
     exit 1
 }
 
-$authHeaders = @{ Authorization = "Bearer $accessToken" }
 Write-Host "  Authenticated successfully." -ForegroundColor Gray
 
-# Helper: refresh token if needed during long runs
+# ── Token refresh helper ─────────────────────────────────────
 function Update-HorizonToken {
     $body = @{ refresh_token = $script:refreshToken } | ConvertTo-Json
-    $resp = Invoke-RestMethod `
-        -Uri "$baseUrl/refresh" `
-        -Method POST `
-        -ContentType "application/json" `
-        -Headers $script:authHeaders `
-        -Body $body
+    $refreshUri = $script:baseUrl + "/refresh"
+    $resp = Invoke-RestMethod -Uri $refreshUri -Method POST -ContentType "application/json" -Headers $script:authHeaders -Body $body
     $script:accessToken  = $resp.access_token
     $script:refreshToken = $resp.refresh_token
-    $script:authHeaders  = @{ Authorization = "Bearer $($script:accessToken)" }
+    $script:authHeaders  = @{ Authorization = "Bearer " + $script:accessToken }
 }
 
-# ── 3. Query event history per machine/user pair ─────────────
-Write-Host "[3/4] Querying Horizon event history..." -ForegroundColor Cyan
-
-# Horizon event types that indicate a successful user login to a desktop
-$loginEventTypes = @("AGENT_CONNECTED", "BROKER_USERLOGGEDIN")
-
-$fromTime = (Get-Date).AddDays(-$LookbackDays).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.000Z")
-
+# ── Authenticated GET helper ─────────────────────────────────
 function Invoke-HorizonGet {
     param([string]$Uri)
     try {
@@ -139,67 +119,66 @@ function Invoke-HorizonGet {
     }
 }
 
-function Invoke-HorizonPost {
-    param([string]$Uri, [string]$Body)
-    try {
-        return Invoke-RestMethod -Uri $Uri -Method POST -ContentType "application/json" -Headers $script:authHeaders -Body $Body -ErrorAction Stop
-    } catch {
-        if ($_.Exception.Response.StatusCode -eq 401) {
-            Update-HorizonToken
-            return Invoke-RestMethod -Uri $Uri -Method POST -ContentType "application/json" -Headers $script:authHeaders -Body $Body -ErrorAction Stop
-        }
-        throw
-    }
-}
+# ── 3. Resolve AD SIDs and query audit events ────────────────
+Write-Host "[3/4] Resolving AD users and querying audit events..." -ForegroundColor Cyan
+
+# Horizon audit events API returns timestamps as epoch milliseconds
+# Search window start time in epoch milliseconds
+$script:fromTimeMs = [long]((Get-Date).AddDays(-$LookbackDays) - [datetime]"1970-01-01T00:00:00Z").TotalMilliseconds
 
 function Get-LastLoginEvent {
     param (
-        [string]$MachineName,   # short hostname extracted from FQDN
-        [string]$SamAccount,
-        [string]$Domain
+        [string]$MachineDns,   # Full FQDN as it appears in the CSV
+        [string]$UserSid
     )
 
     $pageSize  = 100
     $page      = 1
     $lastLogin = $null
 
-    # The Horizon REST API does not support a request body on GET.
-    # Filters must be passed as a JSON-encoded query string parameter.
-    # Events are returned newest-first so the very first matching event
-    # on page 1 is the most recent login — no need to walk all pages.
+    do {
+        # Build query string — filter by machine DNS name, user SID, event type, and time window
+        $uri = $script:baseUrl + "/external/v1/audit-events" +
+               "?page=" + $page +
+               "&size=" + $pageSize +
+               "&sort_by=time" +
+               "&sort_order=Descending"
 
-    $filterObj = @{
-        type    = "And"
-        filters = @(
-            @{ type = "Equals"; name = "machine_name"; value = $MachineName },
-            @{ type = "Equals"; name = "user_name";    value = $SamAccount  },
-            @{
-                type    = "Or"
-                filters = $loginEventTypes | ForEach-Object {
-                    @{ type = "Equals"; name = "event_type"; value = $_ }
+        try {
+            $resp   = Invoke-HorizonGet -Uri $uri
+            $events = $resp
+
+            if ($events -and $events.Count -gt 0) {
+                # Filter client-side: match machine FQDN, user SID, and login event type
+                $matches = $events | Where-Object {
+                    $_.machine_dns_name -eq $MachineDns -and
+                    $_.user_id          -eq $UserSid    -and
+                    $_.type             -eq "VLSI_USERLOGGEDIN" -and
+                    $_.time             -ge $script:fromTimeMs
                 }
+
+                if ($matches) {
+                    # Already sorted newest-first — take the top result
+                    $lastLogin = ($matches | Sort-Object time -Descending | Select-Object -First 1).time
+                    break
+                }
+
+                # If all events on this page are older than our window, stop paginating
+                $oldestOnPage = ($events | Sort-Object time | Select-Object -First 1).time
+                if ($oldestOnPage -lt $script:fromTimeMs) { break }
+
+            } else {
+                break
             }
-        )
-    }
 
-    # URL-encode the JSON filter for use in a query string
-    $filterJson    = $filterObj | ConvertTo-Json -Depth 10 -Compress
-    $filterEncoded = [System.Uri]::EscapeDataString($filterJson)
-    $fromEncoded   = [System.Uri]::EscapeDataString($fromTime)
+            $page++
 
-    $uri = "$baseUrl/monitor/v2/events?filter=$filterEncoded&from_time=$fromEncoded&page=$page&size=$pageSize&sort_by=time&sort_order=Descending"
-
-    try {
-        $resp   = Invoke-HorizonGet -Uri $uri
-        $events = if ($resp.PSObject.Properties["data"]) { $resp.data } else { $resp }
-
-        if ($events -and $events.Count -gt 0) {
-            $lastLogin = ($events | Sort-Object time -Descending | Select-Object -First 1).time
+        } catch {
+            Write-Warning "  Event query failed for SID $UserSid on $MachineDns : $_"
+            break
         }
-    } catch {
-        Write-Warning "  Event query failed for $SamAccount / $MachineName : $_"
-        return $null
-    }
+
+    } while ($true)
 
     return $lastLogin
 }
@@ -211,9 +190,6 @@ $results = foreach ($row in $vdiList) {
     $fqdn    = ($row."DNS Name"      -as [string]).Trim()
     $rawUser = ($row."Assigned User" -as [string]).Trim()
 
-    # Extract short machine name from FQDN (Horizon stores it without domain suffix)
-    $machineName = $fqdn.Split('.')[0].ToUpper()
-
     # Parse domain.fqdn\username
     $samAccount = $rawUser
     $userDomain = ""
@@ -222,27 +198,43 @@ $results = foreach ($row in $vdiList) {
         $samAccount = $Matches[2]
     }
 
-    Write-Host "  Checking: $machineName / $samAccount ..." -ForegroundColor Gray
+    Write-Host "  Resolving SID for $samAccount ..." -ForegroundColor Gray
 
-    $lastLoginRaw = Get-LastLoginEvent -MachineName $machineName -SamAccount $samAccount -Domain $userDomain
-
-    $lastLoginDisplay = if ($lastLoginRaw) {
-        # Horizon returns epoch milliseconds or ISO string depending on version
-        if ($lastLoginRaw -is [long] -or $lastLoginRaw -match '^\d+$') {
-            ([DateTimeOffset]::FromUnixTimeMilliseconds([long]$lastLoginRaw)).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
-        } else {
-            ([datetime]$lastLoginRaw).ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss")
+    # Resolve the user's SID from AD
+    $userSid = $null
+    try {
+        $adParams = @{
+            Identity    = $samAccount
+            Properties  = @("SID")
+            ErrorAction = "Stop"
         }
-    } else {
-        "No login found in last $LookbackDays days"
+        if ($userDomain) { $adParams["Server"] = $userDomain }
+        $adUser  = Get-ADUser @adParams
+        $userSid = $adUser.SID.Value   # e.g. S-1-5-21-...
+    } catch {
+        Write-Warning "  AD lookup failed for '$samAccount': $_"
+    }
+
+    $lastLoginDisplay = "AD lookup failed - skipping"
+
+    if ($userSid) {
+        Write-Host "  Querying events for $samAccount ($userSid) on $fqdn ..." -ForegroundColor Gray
+
+        $lastLoginMs = Get-LastLoginEvent -MachineDns $fqdn -UserSid $userSid
+
+        $lastLoginDisplay = if ($lastLoginMs) {
+            ([DateTimeOffset]::FromUnixTimeMilliseconds([long]$lastLoginMs)).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+        } else {
+            "No login found in last $LookbackDays days"
+        }
     }
 
     [PSCustomObject]@{
         MachineFQDN    = $fqdn
-        MachineName    = $machineName
         AssignedUser   = $rawUser
         SamAccountName = $samAccount
         Domain         = $userDomain
+        UserSID        = $userSid
         LastVDILogin   = $lastLoginDisplay
     }
 }
@@ -258,10 +250,10 @@ if ($OutputCsv) {
 
 # ── Logout ───────────────────────────────────────────────────
 try {
-    Invoke-RestMethod -Uri "$baseUrl/logout" -Method POST `
-        -ContentType "application/json" `
-        -Headers $authHeaders `
-        -Body (@{ refresh_token = $refreshToken } | ConvertTo-Json) | Out-Null
+    $logoutUri = $script:baseUrl + "/logout"
+    Invoke-RestMethod -Uri $logoutUri -Method POST -ContentType "application/json" `
+        -Headers $script:authHeaders `
+        -Body (@{ refresh_token = $script:refreshToken } | ConvertTo-Json) | Out-Null
 } catch {}
 
 Write-Host "Done." -ForegroundColor Green
