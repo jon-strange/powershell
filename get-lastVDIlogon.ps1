@@ -133,12 +133,10 @@ function Get-LastLoginEvent {
 
     $pageSize   = 100
     $page       = 1
+    $maxPages   = 20          # Safety cap — 20 x 100 = 2000 events per machine max
     $allMatches = @()
 
     do {
-        # Server-side filter on short machine name and event type.
-        # sort_order is not reliably honoured by this API version so we
-        # collect all matching events across all pages and return the max.
         $uri = $script:baseUrl + "/external/v1/audit-events" +
                "?type=BROKER_USERLOGGEDIN" +
                "&machine_dns_name=" + [System.Uri]::EscapeDataString($MachineName) +
@@ -150,7 +148,7 @@ function Get-LastLoginEvent {
 
             if ($events -and $events.Count -gt 0) {
 
-                # Filter client-side by SID and lookback window
+                # Collect events matching this user's SID within the lookback window
                 $pageMatches = $events | Where-Object {
                     $_.user_id -eq $UserSid -and
                     $_.time    -ge $script:fromTimeMs
@@ -160,7 +158,15 @@ function Get-LastLoginEvent {
                     $allMatches += $pageMatches
                 }
 
-                # Stop when we get a partial page — no more results exist
+                # Stop if every event on this page is older than our lookback window
+                $newestOnPage = ($events | Measure-Object -Property time -Maximum).Maximum
+                $oldestOnPage = ($events | Measure-Object -Property time -Minimum).Minimum
+                if ($oldestOnPage -lt $script:fromTimeMs -and $newestOnPage -lt $script:fromTimeMs) {
+                    Write-Host "    Reached lookback boundary at page $page." -ForegroundColor DarkGray
+                    break
+                }
+
+                # Stop if partial page returned — end of results
                 if ($events.Count -lt $pageSize) { break }
 
             } else {
@@ -174,9 +180,13 @@ function Get-LastLoginEvent {
             break
         }
 
-    } while ($true)
+    } while ($page -le $maxPages)
 
-    # Return the highest (most recent) timestamp across all matching events
+    if ($page -gt $maxPages) {
+        Write-Host "    Hit page cap ($maxPages pages) for $MachineName." -ForegroundColor DarkGray
+    }
+
+    # Return the most recent matching timestamp
     if ($allMatches.Count -gt 0) {
         return ($allMatches | Measure-Object -Property time -Maximum).Maximum
     }
