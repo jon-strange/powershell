@@ -126,6 +126,32 @@ $loginEventTypes = @("AGENT_CONNECTED", "BROKER_USERLOGGEDIN")
 
 $fromTime = (Get-Date).AddDays(-$LookbackDays).ToUniversalTime().ToString("yyyy-MM-ddTHH:mm:ss.000Z")
 
+function Invoke-HorizonGet {
+    param([string]$Uri)
+    try {
+        return Invoke-RestMethod -Uri $Uri -Method GET -Headers $script:authHeaders -ErrorAction Stop
+    } catch {
+        if ($_.Exception.Response.StatusCode -eq 401) {
+            Update-HorizonToken
+            return Invoke-RestMethod -Uri $Uri -Method GET -Headers $script:authHeaders -ErrorAction Stop
+        }
+        throw
+    }
+}
+
+function Invoke-HorizonPost {
+    param([string]$Uri, [string]$Body)
+    try {
+        return Invoke-RestMethod -Uri $Uri -Method POST -ContentType "application/json" -Headers $script:authHeaders -Body $Body -ErrorAction Stop
+    } catch {
+        if ($_.Exception.Response.StatusCode -eq 401) {
+            Update-HorizonToken
+            return Invoke-RestMethod -Uri $Uri -Method POST -ContentType "application/json" -Headers $script:authHeaders -Body $Body -ErrorAction Stop
+        }
+        throw
+    }
+}
+
 function Get-LastLoginEvent {
     param (
         [string]$MachineName,   # short hostname extracted from FQDN
@@ -133,70 +159,47 @@ function Get-LastLoginEvent {
         [string]$Domain
     )
 
-    $page     = 1
-    $pageSize = 100
+    $pageSize  = 100
+    $page      = 1
     $lastLogin = $null
 
-    do {
-        # Build filter: machine name AND user name AND event type
-        # Horizon REST filter uses JSON filter DSL
-        $filterBody = @{
-            filter = @{
-                type    = "And"
-                filters = @(
-                    @{ type = "Equals"; name = "machine_name"; value = $MachineName },
-                    @{ type = "Equals"; name = "user_name";    value = $SamAccount  },
-                    @{ type = "Or"
-                       filters = $loginEventTypes | ForEach-Object {
-                           @{ type = "Equals"; name = "event_type"; value = $_ }
-                       }
-                    }
-                )
-            }
-            page      = $page
-            size      = $pageSize
-            from_time = $fromTime
-        } | ConvertTo-Json -Depth 10
+    # The Horizon REST API does not support a request body on GET.
+    # Filters must be passed as a JSON-encoded query string parameter.
+    # Events are returned newest-first so the very first matching event
+    # on page 1 is the most recent login — no need to walk all pages.
 
-        try {
-            $resp = Invoke-RestMethod `
-                -Uri "$baseUrl/monitor/v2/events" `
-                -Method GET `
-                -ContentType "application/json" `
-                -Headers $script:authHeaders `
-                -Body $filterBody `
-                -ErrorAction Stop
-        } catch {
-            # 401 = token expired, refresh and retry once
-            if ($_.Exception.Response.StatusCode -eq 401) {
-                Update-HorizonToken
-                $resp = Invoke-RestMethod `
-                    -Uri "$baseUrl/monitor/v2/events" `
-                    -Method GET `
-                    -ContentType "application/json" `
-                    -Headers $script:authHeaders `
-                    -Body $filterBody `
-                    -ErrorAction Stop
-            } else {
-                Write-Warning "  Event query failed for $SamAccount / $MachineName : $_"
-                return $null
+    $filterObj = @{
+        type    = "And"
+        filters = @(
+            @{ type = "Equals"; name = "machine_name"; value = $MachineName },
+            @{ type = "Equals"; name = "user_name";    value = $SamAccount  },
+            @{
+                type    = "Or"
+                filters = $loginEventTypes | ForEach-Object {
+                    @{ type = "Equals"; name = "event_type"; value = $_ }
+                }
             }
-        }
+        )
+    }
 
-        $events = $resp.data
+    # URL-encode the JSON filter for use in a query string
+    $filterJson    = $filterObj | ConvertTo-Json -Depth 10 -Compress
+    $filterEncoded = [System.Uri]::EscapeDataString($filterJson)
+    $fromEncoded   = [System.Uri]::EscapeDataString($fromTime)
+
+    $uri = "$baseUrl/monitor/v2/events?filter=$filterEncoded&from_time=$fromEncoded&page=$page&size=$pageSize&sort_by=time&sort_order=Descending"
+
+    try {
+        $resp   = Invoke-HorizonGet -Uri $uri
+        $events = if ($resp.PSObject.Properties["data"]) { $resp.data } else { $resp }
+
         if ($events -and $events.Count -gt 0) {
-            # Events are returned newest-first; grab the most recent timestamp
-            $newest = $events | Sort-Object time -Descending | Select-Object -First 1
-            if ($null -eq $lastLogin -or $newest.time -gt $lastLogin) {
-                $lastLogin = $newest.time
-            }
+            $lastLogin = ($events | Sort-Object time -Descending | Select-Object -First 1).time
         }
-
-        $totalPages = [math]::Ceiling($resp.total / $pageSize)
-        $page++
-
-    } while ($page -le $totalPages -and $null -eq $lastLogin)
-    # Stop as soon as we find any event — events are newest-first so first hit = last login
+    } catch {
+        Write-Warning "  Event query failed for $SamAccount / $MachineName : $_"
+        return $null
+    }
 
     return $lastLogin
 }
