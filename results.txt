@@ -18,3 +18,20 @@ At line:23 char:15
 +                 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : InvalidOperation: (System.Net.HttpWebRequest:HttpWebRequest) [Invoke-RestMethod], WebException
     + FullyQualifiedErrorId : WebCmdletWebResponseException,Microsoft.PowerShell.Commands.InvokeRestMethodCommand
+
+
+[404] /rest/monitor/v1/events
+    [404] /rest/monitor/v2/events
+OK  [200] /rest/external/v1/audit-events
+    [404] /rest/monitor/v1/session-events
+    [404] /rest/monitor/v2/session-events
+    [404] /rest/monitor/v1/desktop-sessions
+    [404] /rest/monitor/v2/desktop-sessions
+    [404] /rest/monitor/v1/audit
+    [404] /rest/monitor/v2/audit
+OK  [200] /rest/inventory/v1/sessions
+    [404] /rest/inventory/v2/sessions
+OK  [200] /rest/inventory/v1/machines
+OK  [200] /rest/inventory/v2/machines
+    [404] /rest/monitor/v1/global-sessions
+    [404] /rest/monitor/v2/global-sessions
