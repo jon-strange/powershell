@@ -35,3 +35,14 @@ OK  [200] /rest/inventory/v1/machines
 OK  [200] /rest/inventory/v2/machines
     [404] /rest/monitor/v1/global-sessions
     [404] /rest/monitor/v2/global-sessions
+
+
+First record field names:
+id
+user_id
+type
+severity
+module
+machine_dns_name
+time
+message
