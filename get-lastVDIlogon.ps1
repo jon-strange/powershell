@@ -3,7 +3,7 @@
 #
 # Reads a CSV of VDI machines and assigned users, resolves each
 # user's AD SID, then queries the Horizon audit events API
-# (/rest/external/v1/audit-events) to find the last VLSI_USERLOGGEDIN
+# (/rest/external/v1/audit-events) to find the last BROKER_USERLOGGEDIN
 # event matching that SID on their assigned VDI machine.
 #
 # CSV format expected:
@@ -128,7 +128,7 @@ $script:fromTimeMs = [long]((Get-Date).AddDays(-$LookbackDays) - [datetime]"1970
 
 function Get-LastLoginEvent {
     param (
-        [string]$MachineDns,   # Full FQDN as it appears in the CSV
+        [string]$MachineDns,
         [string]$UserSid
     )
 
@@ -137,35 +137,39 @@ function Get-LastLoginEvent {
     $lastLogin = $null
 
     do {
-        # Build query string — filter by machine DNS name, user SID, event type, and time window
+        # Server-side filter: only BROKER_USERLOGGEDIN events for this specific machine.
+        # Results come back newest-first. We then match the SID client-side since the
+        # API does not support filtering on user_id directly.
         $uri = $script:baseUrl + "/external/v1/audit-events" +
-               "?page=" + $page +
-               "&size=" + $pageSize +
+               "?type=BROKER_USERLOGGEDIN" +
+               "&machine_dns_name=" + [System.Uri]::EscapeDataString($MachineDns) +
                "&sort_by=time" +
-               "&sort_order=Descending"
+               "&sort_order=Descending" +
+               "&page=" + $page +
+               "&size=" + $pageSize
 
         try {
-            $resp   = Invoke-HorizonGet -Uri $uri
-            $events = $resp
+            $events = Invoke-HorizonGet -Uri $uri
 
             if ($events -and $events.Count -gt 0) {
-                # Filter client-side: match machine FQDN, user SID, and login event type
-                $matches = $events | Where-Object {
-                    $_.machine_dns_name -eq $MachineDns -and
-                    $_.user_id          -eq $UserSid    -and
-                    $_.type             -eq "VLSI_USERLOGGEDIN" -and
-                    $_.time             -ge $script:fromTimeMs
-                }
 
-                if ($matches) {
-                    # Already sorted newest-first — take the top result
-                    $lastLogin = ($matches | Sort-Object time -Descending | Select-Object -First 1).time
+                # Match SID client-side and check within lookback window
+                $match = $events | Where-Object {
+                    $_.user_id -eq $UserSid -and
+                    $_.time    -ge $script:fromTimeMs
+                } | Sort-Object time -Descending | Select-Object -First 1
+
+                if ($match) {
+                    $lastLogin = $match.time
                     break
                 }
 
-                # If all events on this page are older than our window, stop paginating
+                # If oldest event on this page is beyond the lookback window, stop
                 $oldestOnPage = ($events | Sort-Object time | Select-Object -First 1).time
                 if ($oldestOnPage -lt $script:fromTimeMs) { break }
+
+                # If this page returned fewer results than requested, we've hit the end
+                if ($events.Count -lt $pageSize) { break }
 
             } else {
                 break
@@ -174,7 +178,7 @@ function Get-LastLoginEvent {
             $page++
 
         } catch {
-            Write-Warning "  Event query failed for SID $UserSid on $MachineDns : $_"
+            Write-Warning "  Event query failed for $MachineDns : $_"
             break
         }
 
