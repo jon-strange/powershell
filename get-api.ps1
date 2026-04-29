@@ -18,16 +18,20 @@ $authBody = @{ domain = $domain; username = $username; password = $password } | 
 $token    = (Invoke-RestMethod -Uri $loginUri -Method POST -ContentType "application/json" -Body $authBody).access_token
 $headers  = @{ Authorization = "Bearer " + $token }
 
-# Show only the unique event types and the format of user_id (masked)
-$uri    = "https://" + $server + "/rest/external/v1/audit-events?page=1&size=20"
+# Pull a larger sample sorted newest-first
+$uri    = "https://" + $server + "/rest/external/v1/audit-events?page=1&size=100&sort_by=time&sort_order=Descending"
 $result = Invoke-RestMethod -Uri $uri -Method GET -Headers $headers
 
-Write-Host "Unique event types seen:"
-$result | Select-Object -ExpandProperty type | Sort-Object -Unique
+# 1. Show VLSI_USERLOGGEDIN events only — mask user_id, show machine and time
+Write-Host "=== VLSI_USERLOGGEDIN events in last 100 records ===" -ForegroundColor Cyan
+$result | Where-Object { $_.type -eq "VLSI_USERLOGGEDIN" } | ForEach-Object {
+    [PSCustomObject]@{
+        time             = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$_.time).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+        machine_dns_name = $_.machine_dns_name
+        user_id_prefix   = ($_.user_id -as [string]).Substring(0,10) + "..."
+    }
+} | Format-Table -AutoSize
 
-Write-Host "`nUser ID format (masked):"
-$sample = $result[0].user_id -as [string]
-Write-Host ("Length: " + $sample.Length)
-Write-Host ("Starts with: " + $sample.Substring(0, [Math]::Min(3, $sample.Length)) + "...")
-Write-Host ("Contains backslash: " + $sample.Contains("\"))
-Write-Host ("Contains @: " + $sample.Contains("@"))
+# 2. Show all unique machine_dns_name formats seen across all 100 events
+Write-Host "=== Unique machine_dns_name formats seen ===" -ForegroundColor Cyan
+$result | Select-Object -ExpandProperty machine_dns_name | Sort-Object -Unique
