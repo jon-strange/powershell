@@ -1,8 +1,9 @@
-$server   = "your-horizon-server"
-$domain   = "your-netbios-domain"
-$username = "your-username"
-$password = "your-password"
-$testMachine = "yourvdi.domain.fqdn"
+$server      = "your-horizon-server"
+$domain      = "your-netbios-domain"
+$username    = "your-username"
+$password    = "your-password"
+$testMachine = "yourvdimachinename"   # SHORT name only, no domain suffix
+$testUser    = "knownusername"
 
 Add-Type @"
     using System.Net;
@@ -19,23 +20,21 @@ $authBody = @{ domain = $domain; username = $username; password = $password } | 
 $token    = (Invoke-RestMethod -Uri $loginUri -Method POST -ContentType "application/json" -Body $authBody).access_token
 $headers  = @{ Authorization = "Bearer " + $token }
 
-# Test various server-side filter parameter styles
-$baseUri = "https://" + $server + "/rest/external/v1/audit-events"
+# Resolve SID
+$adUser = Get-ADUser -Identity $testUser -Properties SID
+$sid    = $adUser.SID.Value
+Write-Host "Resolved SID: $sid" -ForegroundColor Cyan
 
-$tests = [ordered]@{
-    "type filter"         = $baseUri + "?page=1&size=5&type=BROKER_USERLOGGEDIN"
-    "machine_dns_name"    = $baseUri + "?page=1&size=5&machine_dns_name=" + $testMachine
-    "filter by type"      = $baseUri + "?page=1&size=5&filter=type%3DBROKER_USERLOGGEDIN"
-    "event_type param"    = $baseUri + "?page=1&size=5&event_type=BROKER_USERLOGGEDIN"
-    "module param"        = $baseUri + "?page=1&size=5&module=BROKER"
-}
+# Query using short machine name this time
+$uri    = "https://" + $server + "/rest/external/v1/audit-events?type=BROKER_USERLOGGEDIN&machine_dns_name=" + $testMachine + "&sort_by=time&sort_order=Descending&page=1&size=10"
+$result = Invoke-RestMethod -Uri $uri -Method GET -Headers $headers
 
-foreach ($test in $tests.GetEnumerator()) {
-    try {
-        $resp = Invoke-RestMethod -Uri $test.Value -Method GET -Headers $headers -ErrorAction Stop
-        Write-Host "OK  [$($resp.Count) results] $($test.Key)" -ForegroundColor Green
-    } catch {
-        $code = $_.Exception.Response.StatusCode.value__
-        Write-Host "    [$code] $($test.Key)" -ForegroundColor Gray
+Write-Host "Events returned: $($result.Count)" -ForegroundColor Cyan
+
+$result | ForEach-Object {
+    [PSCustomObject]@{
+        time      = [DateTimeOffset]::FromUnixTimeMilliseconds([long]$_.time).LocalDateTime.ToString("yyyy-MM-dd HH:mm:ss")
+        user_id   = $_.user_id
+        sid_match = ($_.user_id -eq $sid)
     }
-}
+} | Format-Table -AutoSize
