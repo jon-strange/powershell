@@ -18,16 +18,16 @@ $authBody = @{ domain = $domain; username = $username; password = $password } | 
 $token    = (Invoke-RestMethod -Uri $loginUri -Method POST -ContentType "application/json" -Body $authBody).access_token
 $headers  = @{ Authorization = "Bearer " + $token }
 
-$uri    = "https://" + $server + "/rest/external/v1/audit-events?page=1&size=3"
+# Show only the unique event types and the format of user_id (masked)
+$uri    = "https://" + $server + "/rest/external/v1/audit-events?page=1&size=20"
 $result = Invoke-RestMethod -Uri $uri -Method GET -Headers $headers
 
-# Print only the field names from the first record — no values
-if ($result -and $result.Count -gt 0) {
-    Write-Host "Top-level response type: $($result.GetType().Name)"
-    Write-Host "First record field names:"
-    $result[0].PSObject.Properties.Name
-} elseif ($result.PSObject.Properties["data"]) {
-    Write-Host "Top-level response type: object with 'data' property"
-    Write-Host "First record field names:"
-    $result.data[0].PSObject.Properties.Name
-}
+Write-Host "Unique event types seen:"
+$result | Select-Object -ExpandProperty type | Sort-Object -Unique
+
+Write-Host "`nUser ID format (masked):"
+$sample = $result[0].user_id -as [string]
+Write-Host ("Length: " + $sample.Length)
+Write-Host ("Starts with: " + $sample.Substring(0, [Math]::Min(3, $sample.Length)) + "...")
+Write-Host ("Contains backslash: " + $sample.Contains("\"))
+Write-Host ("Contains @: " + $sample.Contains("@"))
