@@ -67,3 +67,12 @@ Length: 44
 Starts with: S-1...
 Contains backslash: False
 Contains @: False
+
+
+Resolved SID: S-1-5-........
+Total events returned: 1000
+Events for d........: 0
+Events for SID S-1-5.......: 0
+Combined machine+SID matches: 0
+
+Event types seen for d........:
