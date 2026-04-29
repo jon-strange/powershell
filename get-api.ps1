@@ -1,5 +1,5 @@
 $server = "<your-horizon-server>"
-$domain = "<your-netbios-domain>"   # e.g. CORP
+$domain = "<your-netbios-domain>"
 $username = "<your-username>"
 $password = "<your-password>"
 
@@ -15,11 +15,15 @@ Add-Type @"
 [System.Net.ServicePointManager]::SecurityProtocol = [System.Net.SecurityProtocolType]::Tls12
 
 # Authenticate
-$authBody = @{ domain = $domain; username = $username; password = $password } | ConvertTo-Json
-$token = (Invoke-RestMethod -Uri "https://$server/rest/login" -Method POST -ContentType "application/json" -Body $authBody).access_token
+$loginUri = "https://$server/rest/login"
+$authBody  = @{ domain = $domain; username = $username; password = $password } | ConvertTo-Json
+$token     = (Invoke-RestMethod -Uri $loginUri -Method POST -ContentType "application/json" -Body $authBody).access_token
 
 $headers = @{ Authorization = "Bearer $token" }
 
 # Fetch the swagger doc
-$swagger = Invoke-RestMethod -Uri "https://$server/rest/v1/swagger.json" -Method GET -Headers $headers
+$swaggerUri = "https://$server/rest/v1/swagger.json"
+$swagger    = Invoke-RestMethod -Uri $swaggerUri -Method GET -Headers $headers
+
+# Print all available API paths
 $swagger.paths.PSObject.Properties.Name | Sort-Object
