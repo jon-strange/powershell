@@ -24,17 +24,16 @@
     If omitted, you will be prompted once and the same credential is reused.
 
 .EXAMPLE
-    # Use default servers and prompt for credentials
     .\Get-VMInventory.ps1
 
 .EXAMPLE
-    # Specify servers and a credential object
     $cred = Get-Credential
     .\Get-VMInventory.ps1 -vCenterServers vcsa01.lab.local,vcsa02.lab.local -Credential $cred
 
 .NOTES
     Requires: VMware.PowerCLI 13.x or later (vCenter 8.0.x compatible)
-    Set-PowerCLIConfiguration -InvalidCertificateAction Ignore  (if using self-signed certs)
+    Uses the vCenter CIS REST API (/rest/com/vmware/cis/tagging/) for tag retrieval,
+    which is compatible across all vCenter 8.0.x builds regardless of PowerCLI version.
 #>
 
 [CmdletBinding()]
@@ -55,15 +54,38 @@ param(
 # 0.  INITIAL SETUP
 # ─────────────────────────────────────────────────────────────
 
-# Suppress certificate warnings for lab/self-signed environments.
-# Remove or change to 'Fail' in production with valid certs.
 Set-PowerCLIConfiguration -InvalidCertificateAction Ignore -Scope Session -Confirm:$false | Out-Null
 Set-PowerCLIConfiguration -ParticipateInCeip $false       -Scope Session -Confirm:$false | Out-Null
+
+# PowerShell 5.1 does not support -SkipCertificateCheck on Invoke-RestMethod.
+# This bypass covers self-signed vCenter certs on Windows PowerShell.
+if ($PSVersionTable.PSVersion.Major -lt 6) {
+    if (-not ([System.Management.Automation.PSTypeName]'TrustAllCertsPolicy').Type) {
+        Add-Type @"
+using System.Net;
+using System.Security.Cryptography.X509Certificates;
+public class TrustAllCertsPolicy : ICertificatePolicy {
+    public bool CheckValidationResult(
+        ServicePoint srvPoint, X509Certificate certificate,
+        WebRequest request, int certificateProblem) { return true; }
+}
+"@
+    }
+    [System.Net.ServicePointManager]::CertificatePolicy = New-Object TrustAllCertsPolicy
+    [System.Net.ServicePointManager]::SecurityProtocol  = [System.Net.SecurityProtocolType]::Tls12
+}
 
 # Prompt for credentials once if not supplied
 if (-not $Credential) {
     Write-Host "Enter credentials for vCenter access (used for all VCSAs):" -ForegroundColor Cyan
     $Credential = Get-Credential
+}
+
+# Build Invoke-RestMethod common parameters depending on PS version
+$irmCommon = if ($PSVersionTable.PSVersion.Major -ge 6) {
+    @{ SkipCertificateCheck = $true }
+} else {
+    @{}   # cert bypass already applied globally above
 }
 
 $allVMRecords = [System.Collections.Generic.List[PSCustomObject]]::new()
@@ -86,81 +108,106 @@ foreach ($vcsa in $vCenterServers) {
     }
 
     # ---------------------------------------------------------
-    # 1a.  Retrieve all VMs — use Get-View for performance
+    # 1a.  Retrieve all VMs via Get-View (fast bulk retrieval)
     # ---------------------------------------------------------
     Write-Host "  Retrieving VMs ..." -ForegroundColor Gray
 
-    $vmProperties = @(
-        'Name',
-        'Config.Annotation',          # Description / Notes
-        'Guest.HostName',             # DNS name reported by VMware Tools
-        'Summary.Config.GuestFullName'
-    )
-
     $vmViews = Get-View -Server $viServer -ViewType VirtualMachine `
-                        -Property $vmProperties `
+                        -Property 'Name','Config.Annotation','Guest.HostName' `
                         -Filter @{ 'Config.Template' = 'False' } `
                         -ErrorAction Stop
 
     Write-Host "  Found $($vmViews.Count) VMs. Fetching Tags ..." -ForegroundColor Gray
 
     # ---------------------------------------------------------
-    # 1b.  Build a MoRef → Tag list map via vSphere REST API
-    #      (avoids -EntityType which was removed from Get-TagAssignment
-    #       in newer PowerCLI releases)
+    # 1b.  Build MoRef -> Tag list map via vCenter CIS REST API
+    #
+    #      The PowerCLI Get-TagAssignment cmdlet dropped the -EntityType
+    #      parameter in newer releases, making bulk retrieval impossible.
+    #      The CIS REST API is the supported alternative and works on all
+    #      vCenter 8.0.x builds.
+    #
+    #      Endpoint base: /rest/com/vmware/cis/tagging/
     # ---------------------------------------------------------
-    $tagAssignments = @{}    # Key = "VirtualMachine:vm-NNN", Value = List[string] "Cat:Tag"
+    $tagAssignments = @{}   # Key = "VirtualMachine:vm-NNN"  Value = List[string]
 
     try {
-        # Reuse the session token that Connect-VIServer already established
-        $sessionToken = $viServer.SessionSecret
+        $baseUri = "https://$($viServer.Name)"
 
-        $baseUri  = "https://$($viServer.Name)"
-        $headers  = @{
-            'vmware-api-session-id' = $sessionToken
+        # -- Authenticate: POST /rest/com/vmware/cis/session --
+        $authBytes = [System.Text.Encoding]::UTF8.GetBytes(
+            "$($Credential.UserName):$($Credential.GetNetworkCredential().Password)")
+        $authB64   = [Convert]::ToBase64String($authBytes)
+
+        $cisSession = Invoke-RestMethod `
+            -Uri     "$baseUri/rest/com/vmware/cis/session" `
+            -Method  Post `
+            -Headers @{ Authorization = "Basic $authB64" } `
+            @irmCommon
+
+        $cisToken = $cisSession.value
+        $restHdr  = @{
+            'vmware-api-session-id' = $cisToken
             'Content-Type'          = 'application/json'
         }
 
-        # --- Build a tag-id → "Category:Name" lookup ---
-        # GET /api/tagging/tag  returns all tag IDs
-        $allTagIds = Invoke-RestMethod -Uri "$baseUri/api/tagging/tag" `
-                                       -Headers $headers -Method Get -SkipCertificateCheck
+        # -- Step 1: Get all tag IDs --
+        # GET /rest/com/vmware/cis/tagging/tag
+        $tagListResp = Invoke-RestMethod `
+            -Uri     "$baseUri/rest/com/vmware/cis/tagging/tag" `
+            -Method  Get `
+            -Headers $restHdr `
+            @irmCommon
 
-        $tagIdToLabel = @{}   # tag-id -> "Category:Name"
+        $allTagIds    = @($tagListResp.value)
+        $tagIdToLabel = @{}
+        $catCache     = @{}
 
+        Write-Host "  Resolving $($allTagIds.Count) tags to Category:Name labels ..." -ForegroundColor Gray
+
+        # -- Step 2: Resolve each tag ID to "Category:TagName" --
         foreach ($tagId in $allTagIds) {
-            $tagDetail = Invoke-RestMethod -Uri "$baseUri/api/tagging/tag/$tagId" `
-                                           -Headers $headers -Method Get -SkipCertificateCheck
+            $tagDetail = Invoke-RestMethod `
+                -Uri     "$baseUri/rest/com/vmware/cis/tagging/tag/$tagId" `
+                -Method  Get `
+                -Headers $restHdr `
+                @irmCommon
 
-            $catDetail = Invoke-RestMethod -Uri "$baseUri/api/tagging/category/$($tagDetail.category_id)" `
-                                           -Headers $headers -Method Get -SkipCertificateCheck
+            $catId = $tagDetail.value.category_id
 
-            $tagIdToLabel[$tagId] = "$($catDetail.name):$($tagDetail.name)"
+            if (-not $catCache.ContainsKey($catId)) {
+                $catDetail       = Invoke-RestMethod `
+                    -Uri     "$baseUri/rest/com/vmware/cis/tagging/category/$catId" `
+                    -Method  Get `
+                    -Headers $restHdr `
+                    @irmCommon
+                $catCache[$catId] = $catDetail.value.name
+            }
+
+            $tagIdToLabel[$tagId] = "$($catCache[$catId]):$($tagDetail.value.name)"
         }
 
-        # --- For each tag, get which objects it is assigned to ---
-        # POST /api/tagging/tag-association?action=list-attached-objects-on-tags
-        # Accepts up to 2000 tag IDs per call — chunk if necessary
-        $chunkSize  = 500
-        $allTagIdList = @($allTagIds)
+        # -- Step 3: Bulk-fetch which objects each tag is assigned to --
+        # POST /rest/com/vmware/cis/tagging/tag-association
+        #      ?~action=list-attached-objects-on-tags
+        # Body: { "tag_ids": [ "id1", "id2", ... ] }
+        $chunkSize = 500
+        for ($i = 0; $i -lt $allTagIds.Count; $i += $chunkSize) {
+            $chunk = $allTagIds[$i .. ([Math]::Min($i + $chunkSize - 1, $allTagIds.Count - 1))]
+            $body  = @{ tag_ids = $chunk } | ConvertTo-Json -Compress
 
-        for ($i = 0; $i -lt $allTagIdList.Count; $i += $chunkSize) {
-            $chunk = $allTagIdList[$i .. ([Math]::Min($i + $chunkSize - 1, $allTagIdList.Count - 1))]
+            $assocResp = Invoke-RestMethod `
+                -Uri     "$baseUri/rest/com/vmware/cis/tagging/tag-association?~action=list-attached-objects-on-tags" `
+                -Method  Post `
+                -Headers $restHdr `
+                -Body    $body `
+                @irmCommon
 
-            $body     = $chunk | ConvertTo-Json -Compress
-            $response = Invoke-RestMethod `
-                            -Uri "$baseUri/api/tagging/tag-association?action=list-attached-objects-on-tags" `
-                            -Headers $headers -Method Post -Body $body -SkipCertificateCheck
-
-            foreach ($entry in $response) {
+            foreach ($entry in $assocResp.value) {
                 $label = $tagIdToLabel[$entry.tag_id]
-
                 foreach ($obj in $entry.object_ids) {
-                    # Only care about VirtualMachine objects
                     if ($obj.type -ne 'VirtualMachine') { continue }
-
-                    $key = "VirtualMachine:$($obj.id)"   # e.g. "VirtualMachine:vm-123"
-
+                    $key = "VirtualMachine:$($obj.id)"
                     if (-not $tagAssignments.ContainsKey($key)) {
                         $tagAssignments[$key] = [System.Collections.Generic.List[string]]::new()
                     }
@@ -168,6 +215,13 @@ foreach ($vcsa in $vCenterServers) {
                 }
             }
         }
+
+        # Clean up REST session
+        Invoke-RestMethod `
+            -Uri     "$baseUri/rest/com/vmware/cis/session" `
+            -Method  Delete `
+            -Headers $restHdr `
+            @irmCommon | Out-Null
 
         Write-Host "  Tag map built: $($tagAssignments.Count) VMs have at least one tag." -ForegroundColor Gray
     }
@@ -181,10 +235,9 @@ foreach ($vcsa in $vCenterServers) {
     # ---------------------------------------------------------
     foreach ($vm in $vmViews) {
 
-        # REST API key format:  "VirtualMachine:vm-NNN"
-        $moRefStr = "$($vm.MoRef.Type):$($vm.MoRef.Value)"   # e.g. "VirtualMachine:vm-123"
+        # Key must match REST API format: "VirtualMachine:vm-NNN"
+        $moRefStr = "$($vm.MoRef.Type):$($vm.MoRef.Value)"
 
-        # Tags: semicolon-separated "Category:TagName" strings, sorted for readability
         $tagList = if ($tagAssignments.ContainsKey($moRefStr)) {
             ($tagAssignments[$moRefStr].ToArray() | Sort-Object) -join '; '
         } else {
@@ -194,9 +247,9 @@ foreach ($vcsa in $vCenterServers) {
         $allVMRecords.Add([PSCustomObject]@{
             VCSA        = $viServer.Name
             VMName      = $vm.Name
-            DNSName     = $vm.Guest.HostName        # Empty if Tools not running / not installed
-            Description = $vm.Config.Annotation     # VM Notes field
-            Tags        = $tagList                  # "Cat1:Tag1; Cat2:Tag2" or empty
+            DNSName     = $vm.Guest.HostName
+            Description = $vm.Config.Annotation
+            Tags        = $tagList
         })
     }
 
@@ -215,9 +268,7 @@ if ($allVMRecords.Count -eq 0) {
 }
 
 Write-Host "`nExporting $($allVMRecords.Count) VM records to: $OutputPath" -ForegroundColor Cyan
-
 $allVMRecords | Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8
-
 Write-Host "Export complete." -ForegroundColor Green
 Write-Host ""
 Write-Host "Column reference:" -ForegroundColor Yellow
