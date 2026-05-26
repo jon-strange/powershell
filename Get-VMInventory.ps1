@@ -105,27 +105,75 @@ foreach ($vcsa in $vCenterServers) {
     Write-Host "  Found $($vmViews.Count) VMs. Fetching Tags ..." -ForegroundColor Gray
 
     # ---------------------------------------------------------
-    # 1b.  Build a MoRef → Tag list map (batch tag lookup)
-    #      Get-TagAssignment is called once per vCenter, not per VM.
+    # 1b.  Build a MoRef → Tag list map via vSphere REST API
+    #      (avoids -EntityType which was removed from Get-TagAssignment
+    #       in newer PowerCLI releases)
     # ---------------------------------------------------------
-    $tagAssignments = @{}    # Key = VM MoRef string, Value = list of "Category/Tag" strings
+    $tagAssignments = @{}    # Key = "VirtualMachine:vm-NNN", Value = List[string] "Cat:Tag"
 
     try {
-        # Get all tag assignments for VirtualMachine objects on this vCenter
-        $allAssignments = Get-TagAssignment -Server $viServer -EntityType VirtualMachine -ErrorAction Stop
+        # Reuse the session token that Connect-VIServer already established
+        $sessionToken = $viServer.SessionSecret
 
-        foreach ($ta in $allAssignments) {
-            $moRefStr = $ta.Entity.Id   # e.g. "VirtualMachine-vm-123"
-            $tagLabel  = "$($ta.Tag.Category.Name):$($ta.Tag.Name)"
-
-            if (-not $tagAssignments.ContainsKey($moRefStr)) {
-                $tagAssignments[$moRefStr] = [System.Collections.Generic.List[string]]::new()
-            }
-            $tagAssignments[$moRefStr].Add($tagLabel)
+        $baseUri  = "https://$($viServer.Name)"
+        $headers  = @{
+            'vmware-api-session-id' = $sessionToken
+            'Content-Type'          = 'application/json'
         }
+
+        # --- Build a tag-id → "Category:Name" lookup ---
+        # GET /api/tagging/tag  returns all tag IDs
+        $allTagIds = Invoke-RestMethod -Uri "$baseUri/api/tagging/tag" `
+                                       -Headers $headers -Method Get -SkipCertificateCheck
+
+        $tagIdToLabel = @{}   # tag-id -> "Category:Name"
+
+        foreach ($tagId in $allTagIds) {
+            $tagDetail = Invoke-RestMethod -Uri "$baseUri/api/tagging/tag/$tagId" `
+                                           -Headers $headers -Method Get -SkipCertificateCheck
+
+            $catDetail = Invoke-RestMethod -Uri "$baseUri/api/tagging/category/$($tagDetail.category_id)" `
+                                           -Headers $headers -Method Get -SkipCertificateCheck
+
+            $tagIdToLabel[$tagId] = "$($catDetail.name):$($tagDetail.name)"
+        }
+
+        # --- For each tag, get which objects it is assigned to ---
+        # POST /api/tagging/tag-association?action=list-attached-objects-on-tags
+        # Accepts up to 2000 tag IDs per call — chunk if necessary
+        $chunkSize  = 500
+        $allTagIdList = @($allTagIds)
+
+        for ($i = 0; $i -lt $allTagIdList.Count; $i += $chunkSize) {
+            $chunk = $allTagIdList[$i .. ([Math]::Min($i + $chunkSize - 1, $allTagIdList.Count - 1))]
+
+            $body     = $chunk | ConvertTo-Json -Compress
+            $response = Invoke-RestMethod `
+                            -Uri "$baseUri/api/tagging/tag-association?action=list-attached-objects-on-tags" `
+                            -Headers $headers -Method Post -Body $body -SkipCertificateCheck
+
+            foreach ($entry in $response) {
+                $label = $tagIdToLabel[$entry.tag_id]
+
+                foreach ($obj in $entry.object_ids) {
+                    # Only care about VirtualMachine objects
+                    if ($obj.type -ne 'VirtualMachine') { continue }
+
+                    $key = "VirtualMachine:$($obj.id)"   # e.g. "VirtualMachine:vm-123"
+
+                    if (-not $tagAssignments.ContainsKey($key)) {
+                        $tagAssignments[$key] = [System.Collections.Generic.List[string]]::new()
+                    }
+                    $tagAssignments[$key].Add($label)
+                }
+            }
+        }
+
+        Write-Host "  Tag map built: $($tagAssignments.Count) VMs have at least one tag." -ForegroundColor Gray
     }
     catch {
         Write-Warning "  Could not retrieve tag assignments from $vcsa — $($_.Exception.Message)"
+        Write-Warning "  Tags will be empty for all VMs on this vCenter."
     }
 
     # ---------------------------------------------------------
@@ -133,11 +181,12 @@ foreach ($vcsa in $vCenterServers) {
     # ---------------------------------------------------------
     foreach ($vm in $vmViews) {
 
-        $moRefStr = "$($vm.MoRef.Type)-$($vm.MoRef.Value)"   # e.g. VirtualMachine-vm-123
+        # REST API key format:  "VirtualMachine:vm-NNN"
+        $moRefStr = "$($vm.MoRef.Type):$($vm.MoRef.Value)"   # e.g. "VirtualMachine:vm-123"
 
         # Tags: semicolon-separated "Category:TagName" strings, sorted for readability
         $tagList = if ($tagAssignments.ContainsKey($moRefStr)) {
-            ($tagAssignments[$moRefStr] | Sort-Object) -join '; '
+            ($tagAssignments[$moRefStr].ToArray() | Sort-Object) -join '; '
         } else {
             ''
         }
