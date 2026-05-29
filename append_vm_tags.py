@@ -10,12 +10,17 @@ Usage:
         --inventory   spreadsheet1.xlsx \
         --appdata     spreadsheet2.xlsx \
         --mapping     rto_mapping.csv \
-        --inv-vm-col  "VM Name" \
-        --inv-tag-col "Tags" \
-        --app-ci-col  "Configuration Item ID" \
-        --app-rto-col "RTO" \
-        --output      spreadsheet1_updated.xlsx \
-        --audit       audit_log.xlsx
+        --inv-vm-col   "VM Name" \
+        --inv-dns-col  "DNS Name" \
+        --inv-tag-col  "Tags" \
+        --app-ci-col   "Configuration Item ID" \
+        --app-rto-col  "RTO" \
+        --output       spreadsheet1_updated.xlsx \
+        --audit        audit_log.xlsx
+
+Matching logic: the DNS Name from Spreadsheet 1 is stripped of its domain
+suffix (everything from the first '.' onward) and compared case-insensitively
+against the Configuration Item ID in Spreadsheet 2.
 
 All column-name arguments have sensible defaults (shown above) but can be
 overridden if your actual headers differ.
@@ -33,11 +38,12 @@ TAG_DELIMITER = ";"
 
 
 def parse_args():
-    p = argparse.ArgumentParser(description="Append missing Recovery Plan Groups tags.")
+    p = argparse.ArgumentParser(description="append missing Recovery Plan Groups tags.")
     p.add_argument("--inventory",   default="spreadsheet1.xlsx", help="vCenter inventory file")
     p.add_argument("--appdata",     default="spreadsheet2.xlsx", help="Application/server data file")
     p.add_argument("--mapping",     default="rto_mapping.csv",   help="RTO → Tag mapping CSV")
-    p.add_argument("--inv-vm-col",  default="VM Name",                  help="VM name column in inventory")
+    p.add_argument("--inv-vm-col",  default="VM Name",                  help="VM name column in inventory (used in audit log)")
+    p.add_argument("--inv-dns-col", default="DNS Name",                 help="DNS name column in inventory (used for CI matching)")
     p.add_argument("--inv-tag-col", default="Tags",                     help="Tags column in inventory")
     p.add_argument("--app-ci-col",  default="Configuration Item ID",    help="Config Item ID column in appdata")
     p.add_argument("--app-rto-col", default="RTO",                      help="RTO column in appdata")
@@ -63,16 +69,24 @@ def append_tag(existing_tags: str, new_tag: str) -> str:
     return str(existing_tags).rstrip() + f"{TAG_DELIMITER} {new_tag}"
 
 
-def find_ci_match(vm_name: str, ci_series: pd.Series) -> int | None:
+def strip_domain(dns_name: str) -> str:
+    """Strip domain suffix from a DNS name, returning just the hostname portion."""
+    if pd.isna(dns_name) or str(dns_name).strip() == "":
+        return ""
+    return str(dns_name).strip().split(".")[0].lower()
+
+
+def find_ci_match(hostname: str, ci_series: pd.Series) -> int | None:
     """
-    Return the index of the first CI ID that is a case-insensitive substring
-    of vm_name, or None if no match found.
+    Return the index of the CI ID that case-insensitively exactly matches
+    the given hostname, or None if no match found.
     """
-    vm_lower = str(vm_name).lower()
+    if not hostname:
+        return None
     for idx, ci in ci_series.items():
         if pd.isna(ci):
             continue
-        if str(ci).lower() in vm_lower:
+        if str(ci).strip().lower() == hostname:
             return idx
     return None
 
@@ -101,7 +115,8 @@ def main():
         sys.exit(f"ERROR: Mapping file not found: {args.mapping}")
 
     # ── Validate columns ─────────────────────────────────────────────────────
-    for col, src in [(args.inv_vm_col, args.inventory),
+    for col, src in [(args.inv_vm_col,  args.inventory),
+                     (args.inv_dns_col, args.inventory),
                      (args.inv_tag_col, args.inventory)]:
         if col not in inv.columns:
             sys.exit(f"ERROR: Column '{col}' not found in {src}.\n"
@@ -119,12 +134,16 @@ def main():
 
     for i, row in inv.iterrows():
         vm_name   = str(row[args.inv_vm_col])
+        dns_raw   = row[args.inv_dns_col]
+        hostname  = strip_domain(dns_raw)
         tags_val  = row[args.inv_tag_col]
 
         # Already has a Recovery Plan Groups tag — skip
         if has_recovery_tag(tags_val):
             audit_rows.append({
                 "VM Name":        vm_name,
+                "DNS Name":       dns_raw,
+                "Hostname Used":  hostname,
                 "Status":         "Already tagged",
                 "Matched CI ID":  "",
                 "RTO Value":      "",
@@ -134,12 +153,14 @@ def main():
             })
             continue
 
-        # Look for a CI ID that is a substring of the VM name
-        match_idx = find_ci_match(vm_name, app[args.app_ci_col])
+        # Match stripped hostname against CI ID (exact, case-insensitive)
+        match_idx = find_ci_match(hostname, app[args.app_ci_col])
 
         if match_idx is None:
             audit_rows.append({
                 "VM Name":        vm_name,
+                "DNS Name":       dns_raw,
+                "Hostname Used":  hostname,
                 "Status":         "No CI match found",
                 "Matched CI ID":  "",
                 "RTO Value":      "",
@@ -158,6 +179,8 @@ def main():
         if new_tag is None:
             audit_rows.append({
                 "VM Name":        vm_name,
+                "DNS Name":       dns_raw,
+                "Hostname Used":  hostname,
                 "Status":         f"RTO '{rto_value}' not in mapping table",
                 "Matched CI ID":  matched_ci,
                 "RTO Value":      rto_value,
@@ -173,6 +196,8 @@ def main():
 
         audit_rows.append({
             "VM Name":        vm_name,
+            "DNS Name":       dns_raw,
+            "Hostname Used":  hostname,
             "Status":         "Tag added",
             "Matched CI ID":  matched_ci,
             "RTO Value":      rto_value,
