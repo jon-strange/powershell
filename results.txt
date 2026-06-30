@@ -1,13 +1,5 @@
-Exception calling ".ctor" with "2" argument(s): "Value cannot be null.
-Parameter name: collection"
-At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:139 char:9
-+         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
-+         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : NotSpecified: (:) [], MethodInvocationException
-    + FullyQualifiedErrorId : ArgumentNullException
-
 You cannot call a method on a null-valued expression.
-At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:141 char:50
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:144 char:50
 + ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
 +                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
     + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
