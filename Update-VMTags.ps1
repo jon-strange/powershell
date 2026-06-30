@@ -89,18 +89,19 @@ foreach ($group in $byVCSA) {
         continue
     }
 
-    # Cache all tags on this vCenter for fast lookup: "Category:Name" -> Tag object
+    # Cache all tags on this vCenter for fast lookup: "Category:TagName" -> Tag object
     $tagCache = @{}
     Get-Tag -Server $viServer | ForEach-Object {
         $tagCache["$($_.Category.Name):$($_.Name)"] = $_
     }
 
     # Batch-load all current tag assignments on this vCenter
-    $currentAssignments = @{}   # MoRef string -> HashSet of "Category:Tag"
-    Get-TagAssignment -Server $viServer -EntityType VirtualMachine | ForEach-Object {
+    # Note: -EntityType is not supported in all PowerCLI versions; filter client-side instead
+    $currentAssignments = @{}   # MoRef string -> HashSet of "Category: Tag Name"
+    Get-TagAssignment -Server $viServer | Where-Object { $_.Entity.GetType().Name -eq 'VirtualMachineImpl' } | ForEach-Object {
         $moRef = $_.Entity.Id
         if (-not $currentAssignments.ContainsKey($moRef)) {
-            $currentAssignments[$moRef] = [System.Collections.Generic.HashSet[string]]::new()
+            $currentAssignments[$moRef] = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
         }
         [void]$currentAssignments[$moRef].Add("$($_.Tag.Category.Name):$($_.Tag.Name)")
     }
@@ -135,8 +136,8 @@ foreach ($group in $byVCSA) {
 
         $moRef        = $vmObj.Id
         $currentSet   = if ($currentAssignments.ContainsKey($moRef)) { $currentAssignments[$moRef] } `
-                        else { [System.Collections.Generic.HashSet[string]]::new() }
-        $desiredSet   = [System.Collections.Generic.HashSet[string]]::new($desiredTags)
+                        else { [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase) }
+        $desiredSet   = [System.Collections.Generic.HashSet[string]]::new([string[]]$desiredTags, [System.StringComparer]::OrdinalIgnoreCase)
 
         $toAdd    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
         $toRemove = $currentSet | Where-Object { -not $desiredSet.Contains($_) }
