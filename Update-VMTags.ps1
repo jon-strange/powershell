@@ -57,8 +57,8 @@ if (-not $Credential) {
 
 $csvData = Import-Csv -Path $CsvPath
 
-# Group rows by VCSA so we only connect once per vCenter
-$byVCSA = $csvData | Group-Object -Property VCSA
+# Group rows by vCenter so we only connect once per vCenter
+$byVCSA = $csvData | Group-Object -Property 'vCenter'
 
 $results = [System.Collections.Generic.List[PSCustomObject]]::new()
 
@@ -80,7 +80,7 @@ foreach ($group in $byVCSA) {
         foreach ($row in $group.Group) {
             $results.Add([PSCustomObject]@{
                 VCSA    = $vcsaName
-                VMName  = $row.VMName
+                VMName  = $row.'VM Name'
                 Status  = "SKIPPED — vCenter connection failed"
                 Changes = ''
             })
@@ -110,14 +110,14 @@ foreach ($group in $byVCSA) {
     # ---------------------------------------------------------
     foreach ($row in $group.Group) {
 
-        $vmName = $row.VMName
+        $vmName = $row.'VM Name'
 
         # Desired tags from CSV (split on semicolon, trim whitespace, drop empties)
-        $desiredTags = if ([string]::IsNullOrWhiteSpace($row.Tags)) {
+        $desiredTags = [string[]](if ([string]::IsNullOrWhiteSpace($row.Tags)) {
             @()
         } else {
-            $row.Tags -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' }
-        }
+            @($row.Tags -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        })
 
         try {
             $vmObj = Get-VM -Name $vmName -Server $viServer -ErrorAction Stop
@@ -134,8 +134,10 @@ foreach ($group in $byVCSA) {
         }
 
         $moRef      = $vmObj.Id
-        $currentSet = if ($currentAssignments.ContainsKey($moRef)) { $currentAssignments[$moRef] } `
-                      else { [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase) }
+        $currentSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        if ($currentAssignments.ContainsKey($moRef)) {
+            foreach ($t in $currentAssignments[$moRef]) { [void]$currentSet.Add($t) }
+        }
         $desiredSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
         if ($desiredTags.Count -gt 0) {
             foreach ($t in $desiredTags) { [void]$desiredSet.Add($t) }
