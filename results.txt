@@ -1,5 +1,322 @@
-OK  [5 results] type filter
-OK  [5 results] machine_dns_name
-    [400] filter by type
-OK  [5 results] event_type param
-OK  [5 results] module param
+Get-TagAssignment : A parameter cannot be found that matches parameter name 'EntityType'.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:99 char:41
++     Get-TagAssignment -Server $viServer -EntityType VirtualMachine |  ...
++                                         ~~~~~~~~~~~
+    + CategoryInfo          : InvalidArgument: (:) [Get-TagAssignment], ParameterBindingException
+    + FullyQualifiedErrorId : NamedParameterNotFound,VMware.VimAutomation.ViCore.Cmdlets.Commands.Tagging.GetTagAssign
+   ment
+
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT002", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT002" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] FEDVAEOAPP01 - Dev AEO
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] FEQAATMSEC01X
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT000", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT000" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1PZMNAPP01 - Zerto mgt server 1 source site
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] TPLT_WIN11MTG
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] TPLT_WIN11STD
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] dc1pvcfnetc01
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT000", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT000" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1DCMGT01
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1NSC01 - Snapcenter Virtual Appliance
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC0CINT01 -  Cisco Intersight Proxy
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] dc1pvcfnetc01-old
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] dc1vc1 - vcenter
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1OTT01 - Ontap Tools - VSC
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT002", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT002" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1TDTRACEAPP01
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT002", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT002" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1TDTRACEAPP03
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT002", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT002" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1TDTRACEAPP02
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT000", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT000" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1TPACOMSQL01 - Test Database Server For Pacom
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT000", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT000" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] DC1TGC01 - Active Directory Global Catalog test
+Cannot convert argument "capacity", with value: "Recovery Plan Groups: RT002", for ".ctor" to type "System.Int32":
+"Cannot convert value "Recovery Plan Groups: RT002" to type "System.Int32". Error: "Input string was not in a correct
+format.""
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodArgumentConversionInvalidCastArgument
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] FEQAAMLAPP02 - QA Pep+ AML
+Multiple ambiguous overloads found for "new" and the argument count: "1".
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:138 char:9
++         $desiredSet   = [System.Collections.Generic.HashSet[string]]: ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [], MethodException
+    + FullyQualifiedErrorId : MethodCountCouldNotFindBest
+
+You cannot call a method on a null-valued expression.
+At D:\Scripts\VMWare\RTO_Tag_Scripts\Update-VMTags.ps1:140 char:50
++ ... Add    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
++                                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : InvalidOperation: (:) [], RuntimeException
+    + FullyQualifiedErrorId : InvokeMethodOnNull
+
+  [NO CHANGE] FTBXSRVA4.ftbco.FTN.com
+What if: Performing the operation "Disconnect VIServer" on target "User: FTBCO\59124a, Server: dc1vc1.ftbco.ftn.com, Port: 443".
+  Disconnected from dc1vc1.ftbco.ftn.com.
+What if: Performing the operation "Export-Csv" on target ".\Tag-Update-Report_20260630_170807.csv".
+
+── Summary ──────────────────────────────────────────
+  Total processed : 19
+  Updated         : 0
+  No change       : 19
+  Partial errors  : 0
+  Skipped         : 0
+  Report saved to : .\Tag-Update-Report_20260630_170807.csv
