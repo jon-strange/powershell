@@ -1,4 +1,3 @@
-#Requires -Modules VMware.PowerCLI
 <#
 .SYNOPSIS
     Updates VM Tags across multiple vCenter Servers using a CSV exported by Get-VMInventory.ps1.
@@ -134,10 +133,13 @@ foreach ($group in $byVCSA) {
             continue
         }
 
-        $moRef        = $vmObj.Id
-        $currentSet   = if ($currentAssignments.ContainsKey($moRef)) { $currentAssignments[$moRef] } `
-                        else { [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase) }
-        $desiredSet   = [System.Collections.Generic.HashSet[string]]::new([string[]]$desiredTags, [System.StringComparer]::OrdinalIgnoreCase)
+        $moRef      = $vmObj.Id
+        $currentSet = if ($currentAssignments.ContainsKey($moRef)) { $currentAssignments[$moRef] } `
+                      else { [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase) }
+        $desiredSet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+        if ($desiredTags.Count -gt 0) {
+            foreach ($t in $desiredTags) { [void]$desiredSet.Add($t) }
+        }
 
         $toAdd    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
         $toRemove = $currentSet | Where-Object { -not $desiredSet.Contains($_) }
