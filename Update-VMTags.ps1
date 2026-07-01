@@ -57,8 +57,23 @@ if (-not $Credential) {
 
 $csvData = Import-Csv -Path $CsvPath
 
-# Group rows by vCenter so we only connect once per vCenter
-$byVCSA = $csvData | Group-Object -Property 'vCenter'
+# Validate expected columns exist
+$requiredColumns = @('VMName', 'VCSA', 'Tags')
+foreach ($col in $requiredColumns) {
+    if ($csvData[0].PSObject.Properties.Name -notcontains $col) {
+        Write-Error "CSV is missing expected column: '$col'. Found columns: $($csvData[0].PSObject.Properties.Name -join ', ')"
+        exit 1
+    }
+}
+
+# Warn about any rows with a blank VCSA value
+$blankVCenter = $csvData | Where-Object { [string]::IsNullOrWhiteSpace($_.VCSA) }
+if ($blankVCenter) {
+    Write-Warning "$($blankVCenter.Count) row(s) have a blank VCSA value and will be skipped."
+}
+
+# Group rows by VCSA so we only connect once per vCenter
+$byVCSA = $csvData | Where-Object { -not [string]::IsNullOrWhiteSpace($_.VCSA) } | Group-Object -Property 'VCSA'
 
 $results = [System.Collections.Generic.List[PSCustomObject]]::new()
 
@@ -80,7 +95,7 @@ foreach ($group in $byVCSA) {
         foreach ($row in $group.Group) {
             $results.Add([PSCustomObject]@{
                 VCSA    = $vcsaName
-                VMName  = $row.'VM Name'
+                VMName  = $row.VMName
                 Status  = "SKIPPED — vCenter connection failed"
                 Changes = ''
             })
@@ -110,14 +125,14 @@ foreach ($group in $byVCSA) {
     # ---------------------------------------------------------
     foreach ($row in $group.Group) {
 
-        $vmName = $row.'VM Name'
+        $vmName = $row.VMName
 
         # Desired tags from CSV (split on semicolon, trim whitespace, drop empties)
-        $desiredTags = [string[]](if ([string]::IsNullOrWhiteSpace($row.Tags)) {
-            @()
+        if ([string]::IsNullOrWhiteSpace($row.Tags)) {
+            $desiredTags = [string[]]@()
         } else {
-            @($row.Tags -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
-        })
+            $desiredTags = [string[]]@($row.Tags -split ';' | ForEach-Object { $_.Trim() } | Where-Object { $_ -ne '' })
+        }
 
         try {
             $vmObj = Get-VM -Name $vmName -Server $viServer -ErrorAction Stop
@@ -143,8 +158,8 @@ foreach ($group in $byVCSA) {
             foreach ($t in $desiredTags) { [void]$desiredSet.Add($t) }
         }
 
-        $toAdd    = $desiredSet | Where-Object { -not $currentSet.Contains($_) }
-        $toRemove = $currentSet | Where-Object { -not $desiredSet.Contains($_) }
+        $toAdd    = @($desiredSet | Where-Object { -not $currentSet.Contains($_) })
+        $toRemove = @($currentSet | Where-Object { -not $desiredSet.Contains($_) })
 
         $changeLog = [System.Collections.Generic.List[string]]::new()
         $errors    = [System.Collections.Generic.List[string]]::new()
@@ -189,9 +204,13 @@ foreach ($group in $byVCSA) {
             }
         }
 
-        $status = if ($errors.Count -gt 0) { "PARTIAL ERROR" }
-                  elseif ($changeLog.Count -eq 0) { "NO CHANGE" }
-                  else { "UPDATED" }
+        if ($errors.Count -gt 0) {
+            $status = "PARTIAL ERROR"
+        } elseif ($changeLog.Count -eq 0) {
+            $status = "NO CHANGE"
+        } else {
+            $status = "UPDATED"
+        }
 
         if ($errors.Count -gt 0) { $changeLog.AddRange($errors) }
 
